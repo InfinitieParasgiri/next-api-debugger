@@ -27,22 +27,20 @@ function escapeHtml(str: string): string {
 /**
  * Wraps every case-insensitive occurrence of `term` in <mark> tags by
  * walking rendered text nodes directly (rather than regex-replacing the
- * HTML string). This is what keeps it safe: a text-node walk can never
- * split or overlap the <span> tags the syntax highlighter already inserted,
- * whereas string-level replacement could land a <mark> half-inside a tag.
- * The one tradeoff is a match can't span across two adjacent text nodes
- * (e.g. straddling a highlighted token and the plain punctuation next to
- * it) — acceptable for a find-in-payload tool.
+ * HTML string). A text-node walk can never split or overlap the <span>
+ * tags the syntax highlighter already inserted, whereas string-level
+ * replacement could land a <mark> half-inside a tag. Returns the list of
+ * created <mark> elements in document order, which the caller uses
+ * directly for navigation instead of re-querying the DOM later.
  */
-function applyHighlights(container: HTMLElement, term: string): number {
-  const marks = container.querySelectorAll('mark.apd-json-highlight');
-  marks.forEach((mark) => {
+function applyHighlights(container: HTMLElement, term: string): HTMLElement[] {
+  container.querySelectorAll('mark.apd-json-highlight').forEach((mark) => {
     const text = document.createTextNode(mark.textContent || '');
     mark.parentNode?.replaceChild(text, mark);
   });
   container.normalize();
 
-  if (!term) return 0;
+  if (!term) return [];
 
   const lowerTerm = term.toLowerCase();
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -51,7 +49,7 @@ function applyHighlights(container: HTMLElement, term: string): number {
   // eslint-disable-next-line no-cond-assign
   while ((node = walker.nextNode())) textNodes.push(node as Text);
 
-  let count = 0;
+  const marks: HTMLElement[] = [];
   for (const textNode of textNodes) {
     const text = textNode.textContent || '';
     const lowerText = text.toLowerCase();
@@ -64,10 +62,9 @@ function applyHighlights(container: HTMLElement, term: string): number {
       if (idx > lastIndex) frag.appendChild(document.createTextNode(text.slice(lastIndex, idx)));
       const mark = document.createElement('mark');
       mark.className = 'apd-json-highlight';
-      mark.dataset.apdMatchIndex = String(count);
       mark.textContent = text.slice(idx, idx + term.length);
       frag.appendChild(mark);
-      count += 1;
+      marks.push(mark);
       lastIndex = idx + term.length;
       idx = lowerText.indexOf(lowerTerm, lastIndex);
     }
@@ -75,7 +72,7 @@ function applyHighlights(container: HTMLElement, term: string): number {
     textNode.parentNode?.replaceChild(frag, textNode);
   }
 
-  return count;
+  return marks;
 }
 
 interface JsonViewerProps {
@@ -91,6 +88,12 @@ export function JsonViewer({ value, raw, searchable = true }: JsonViewerProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
   const preRef = useRef<HTMLPreElement>(null);
+  // The actual <mark> elements from the most recent highlight pass, in
+  // document order. Navigation reads straight from this array instead of
+  // re-querying the DOM by index/attribute, so it can't drift out of sync
+  // with what's rendered even if something else re-renders in between.
+  const marksRef = useRef<HTMLElement[]>([]);
+  const prevSearchRef = useRef<string>('');
 
   let content: string;
   let isJson = true;
@@ -111,28 +114,37 @@ export function JsonViewer({ value, raw, searchable = true }: JsonViewerProps) {
 
   const html = useMemo(() => (isJson ? highlight(escapeHtml(content)) : escapeHtml(content)), [content, isJson]);
 
-  // Re-apply text highlights whenever the underlying content changes or the
-  // search term changes. Runs after the innerHTML has been (re)written.
+  function applyActive(index: number) {
+    marksRef.current.forEach((mark, i) => mark.classList.toggle('apd-active', i === index));
+    marksRef.current[index]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  // Rebuild highlights whenever the rendered content or search term changes.
+  // Only resets the active index when the term itself actually changed (or
+  // the previous index fell out of range) — so this stays correct even if
+  // it happens to re-run for unrelated reasons (e.g. React re-rendering the
+  // parent modal while new requests keep arriving in the background).
   useEffect(() => {
     if (!preRef.current) return;
-    const count = applyHighlights(preRef.current, search.trim());
-    setMatchCount(count);
-    setActiveIndex(0);
-  }, [html, search]);
+    const term = search.trim();
+    const termChanged = term !== prevSearchRef.current;
+    prevSearchRef.current = term;
 
-  // Move the "active" highlight and scroll it into view.
-  useEffect(() => {
-    if (!preRef.current || matchCount === 0) return;
-    preRef.current.querySelectorAll('mark.apd-json-highlight').forEach((mark) => {
-      mark.classList.toggle('apd-active', mark.getAttribute('data-apd-match-index') === String(activeIndex));
-    });
-    const active = preRef.current.querySelector(`mark.apd-json-highlight[data-apd-match-index="${activeIndex}"]`);
-    active?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [activeIndex, matchCount]);
+    const marks = applyHighlights(preRef.current, term);
+    marksRef.current = marks;
+    setMatchCount(marks.length);
+
+    const nextIndex = termChanged || activeIndex >= marks.length ? 0 : activeIndex;
+    setActiveIndex(nextIndex);
+    applyActive(nextIndex);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [html, search]);
 
   function goTo(delta: number) {
     if (matchCount === 0) return;
-    setActiveIndex((i) => (i + delta + matchCount) % matchCount);
+    const next = (activeIndex + delta + matchCount) % matchCount;
+    setActiveIndex(next);
+    applyActive(next);
   }
 
   return (
@@ -149,7 +161,10 @@ export function JsonViewer({ value, raw, searchable = true }: JsonViewerProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') goTo(e.shiftKey ? -1 : 1);
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                goTo(e.shiftKey ? -1 : 1);
+              }
             }}
             spellCheck={false}
           />
@@ -160,7 +175,12 @@ export function JsonViewer({ value, raw, searchable = true }: JsonViewerProps) {
           )}
           {search && matchCount > 0 && (
             <div className="apd-json-search-nav">
-              <button type="button" onClick={() => goTo(-1)} aria-label="Previous match" title="Previous match (Shift+Enter)">
+              <button
+                type="button"
+                onClick={() => goTo(-1)}
+                aria-label="Previous match"
+                title="Previous match (Shift+Enter)"
+              >
                 ↑
               </button>
               <button type="button" onClick={() => goTo(1)} aria-label="Next match" title="Next match (Enter)">

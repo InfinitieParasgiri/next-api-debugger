@@ -24,9 +24,36 @@ interface AxiosMeta {
 
 function buildFullUrl(config: any): string {
   const base = config?.baseURL || '';
-  const url = config?.url || '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${base}${base && !base.endsWith('/') && !url.startsWith('/') ? '/' : ''}${url}`;
+  const path = config?.url || '';
+  let url = /^https?:\/\//i.test(path)
+    ? path
+    : `${base}${base && !base.endsWith('/') && !path.startsWith('/') ? '/' : ''}${path}`;
+
+  // axios sends `config.params` separately from the URL string — it only
+  // gets serialized into the querystring right before the request goes out
+  // over the wire, using axios's own (or a custom) paramsSerializer. Since
+  // we're not hooking that step, we serialize independently here so the
+  // logged URL — and therefore the generated cURL — actually matches what
+  // was sent.
+  if (config?.params && typeof config.params === 'object') {
+    const query = serializeParams(config.params);
+    if (query) url += (url.includes('?') ? '&' : '?') + query;
+  }
+
+  return url;
+}
+
+function serializeParams(params: Record<string, unknown>): string {
+  const usp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      value.forEach((v) => usp.append(key, String(v)));
+    } else {
+      usp.append(key, String(value));
+    }
+  }
+  return usp.toString();
 }
 
 /** Captures the outgoing body exactly as handed to axios, before axios's own
@@ -110,7 +137,7 @@ export function installAxiosInterceptor(
       requestHeaders,
       requestBody: safeParseJson(requestBodyRaw) ?? requestBodyRaw,
       requestBodyRaw,
-      queryParams: { ...queryParams, ...(config.params || {}) },
+      queryParams,
       responseStatus: status,
       responseStatusText: response?.statusText ?? '',
       responseHeaders: normalizeHeaders(response?.headers),
