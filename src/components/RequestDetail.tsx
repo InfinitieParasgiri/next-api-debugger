@@ -125,7 +125,7 @@ export function RequestDetail({ log, onTogglePin }: RequestDetailProps) {
       </div>
 
       <Section title="cURL">
-        <JsonViewer value={curl} />
+        <JsonViewer value={curl} searchable={false} />
       </Section>
 
       <Section title="Query Params" count={Object.keys(log.queryParams).length} defaultOpen={false}>

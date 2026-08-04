@@ -18,6 +18,8 @@ interface AxiosMeta {
   id: string;
   startTime: number;
   startPerf: number;
+  requestBodyRaw: string | null;
+  requestHeadersSnapshot: Record<string, string>;
 }
 
 function buildFullUrl(config: any): string {
@@ -25,6 +27,22 @@ function buildFullUrl(config: any): string {
   const url = config?.url || '';
   if (/^https?:\/\//i.test(url)) return url;
   return `${base}${base && !base.endsWith('/') && !url.startsWith('/') ? '/' : ''}${url}`;
+}
+
+/** Captures the outgoing body exactly as handed to axios, before axios's own
+ *  transformRequest pipeline has a chance to mutate/replace `config.data`. */
+function snapshotRequestBody(data: unknown): string | null {
+  if (data === undefined || data === null) return null;
+  if (typeof data === 'string') return data;
+  if (typeof URLSearchParams !== 'undefined' && data instanceof URLSearchParams) return data.toString();
+  if (typeof FormData !== 'undefined' && data instanceof FormData) {
+    const parts: string[] = [];
+    (data as FormData).forEach((value, key) => {
+      parts.push(`${key}=${value instanceof File ? `[File: ${value.name}]` : value}`);
+    });
+    return parts.join('&');
+  }
+  return safeStringify(data);
 }
 
 /**
@@ -47,7 +65,16 @@ export function installAxiosInterceptor(
   axiosInstance.__apiDebuggerInstalled = true;
 
   const requestInterceptorId = axiosInstance.interceptors.request.use((config: any) => {
-    const meta: AxiosMeta = { id: generateId(), startTime: Date.now(), startPerf: performance.now() };
+    const meta: AxiosMeta = {
+      id: generateId(),
+      startTime: Date.now(),
+      startPerf: performance.now(),
+      // Snapshot NOW: axios rewrites config.data (JSON.stringify, form
+      // encoding, etc.) further down the pipeline, so this is the only
+      // reliable point to capture exactly what was passed in.
+      requestBodyRaw: snapshotRequestBody(config.data),
+      requestHeadersSnapshot: normalizeHeaders(config.headers),
+    };
     config.__apdMeta = meta;
     return config;
   });
@@ -61,10 +88,17 @@ export function installAxiosInterceptor(
       id: generateId(),
       startTime: Date.now(),
       startPerf: performance.now(),
+      requestBodyRaw: snapshotRequestBody(config.data),
+      requestHeadersSnapshot: normalizeHeaders(config.headers),
     };
     const duration = Math.round(performance.now() - meta.startPerf);
     const { endpoint, queryParams } = parseUrl(url);
-    const requestBodyRaw = safeStringify(config.data);
+    // Prefer the final header state (response time) since axios fills in
+    // things like Content-Type only once the request actually goes out —
+    // but fall back to the request-time snapshot if headers are gone by then.
+    const finalHeaders = normalizeHeaders(config.headers);
+    const requestHeaders = Object.keys(finalHeaders).length > 0 ? finalHeaders : meta.requestHeadersSnapshot;
+    const requestBodyRaw = meta.requestBodyRaw;
     const responseBodyRaw = response?.data !== undefined ? safeStringify(response.data) : null;
     const status: number | null = response?.status ?? error?.response?.status ?? null;
 
@@ -73,8 +107,8 @@ export function installAxiosInterceptor(
       url,
       endpoint,
       method: (config.method || 'get').toUpperCase(),
-      requestHeaders: normalizeHeaders(config.headers),
-      requestBody: config.data ?? safeParseJson(requestBodyRaw),
+      requestHeaders,
+      requestBody: safeParseJson(requestBodyRaw) ?? requestBodyRaw,
       requestBodyRaw,
       queryParams: { ...queryParams, ...(config.params || {}) },
       responseStatus: status,
