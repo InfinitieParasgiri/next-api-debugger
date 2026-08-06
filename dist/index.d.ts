@@ -1,7 +1,7 @@
 import * as react from 'react';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | string;
-type RequestSource = 'fetch' | 'axios';
+type RequestSource = 'fetch' | 'axios' | 'xhr';
 interface ApiLogEntry {
     id: string;
     url: string;

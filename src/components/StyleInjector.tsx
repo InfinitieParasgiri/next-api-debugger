@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { css } from './styles';
+import { css } from '../core/styles';
 
 const STYLE_TAG_ID = 'next-api-debugger-styles';
 

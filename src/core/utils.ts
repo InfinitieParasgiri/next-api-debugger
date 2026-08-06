@@ -1,3 +1,14 @@
+/**
+ * Internal marker header used to prevent double-logging: when the axios
+ * interceptor is active, it tags each outgoing request with this header so
+ * the generic fetch/XHR interceptors (which axios itself is built on top
+ * of under the hood) can recognize "this one is already being logged at
+ * the axios level" and skip it — deleting the header before the request
+ * actually goes out, so nothing extra is ever sent over the wire or risks
+ * tripping a CORS preflight.
+ */
+export const APD_SUPPRESS_HEADER = 'x-apd-skip';
+
 export function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }

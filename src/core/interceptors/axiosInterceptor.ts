@@ -1,6 +1,7 @@
 import { logStore } from '../logStore';
 import { ApiLogEntry } from '../../types';
 import {
+  APD_SUPPRESS_HEADER,
   byteSize,
   generateId,
   normalizeHeaders,
@@ -103,6 +104,18 @@ export function installAxiosInterceptor(
       requestHeadersSnapshot: normalizeHeaders(config.headers),
     };
     config.__apdMeta = meta;
+
+    // Tag the request so the generic fetch/XHR interceptors (axios itself
+    // runs on top of one of them) know this call is already being logged
+    // here and should skip it, rather than logging it a second time. Both
+    // of those interceptors delete this header before anything is actually
+    // sent, so it never reaches the network or a CORS preflight.
+    if (config.headers && typeof config.headers.set === 'function') {
+      config.headers.set(APD_SUPPRESS_HEADER, '1');
+    } else {
+      config.headers = { ...(config.headers || {}), [APD_SUPPRESS_HEADER]: '1' };
+    }
+
     return config;
   });
 
@@ -125,6 +138,7 @@ export function installAxiosInterceptor(
     // but fall back to the request-time snapshot if headers are gone by then.
     const finalHeaders = normalizeHeaders(config.headers);
     const requestHeaders = Object.keys(finalHeaders).length > 0 ? finalHeaders : meta.requestHeadersSnapshot;
+    delete requestHeaders[APD_SUPPRESS_HEADER];
     const requestBodyRaw = meta.requestBodyRaw;
     const responseBodyRaw = response?.data !== undefined ? safeStringify(response.data) : null;
     const status: number | null = response?.status ?? error?.response?.status ?? null;

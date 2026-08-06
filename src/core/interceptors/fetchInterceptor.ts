@@ -1,6 +1,7 @@
 import { logStore } from '../logStore';
 import { ApiLogEntry } from '../../types';
 import {
+  APD_SUPPRESS_HEADER,
   byteSize,
   generateId,
   headersToObject,
@@ -54,12 +55,24 @@ export function installFetchInterceptor(options: FetchInterceptorOptions = {}) {
       return originalFetch!(input as any, init);
     }
 
+    const requestHeaders = headersToObject(new Headers(init?.headers ?? request?.headers ?? undefined));
+
+    // Requests already being logged by the axios interceptor carry this
+    // marker — skip logging (and never let it reach the network) so axios
+    // calls aren't double-counted when axios happens to use the fetch
+    // adapter under the hood.
+    if (requestHeaders[APD_SUPPRESS_HEADER]) {
+      const cleanHeaders = new Headers(init?.headers ?? request?.headers ?? undefined);
+      cleanHeaders.delete(APD_SUPPRESS_HEADER);
+      if (request) {
+        return originalFetch!(new Request(request, { headers: cleanHeaders }));
+      }
+      return originalFetch!(input as any, { ...init, headers: cleanHeaders });
+    }
+
     const startTime = Date.now();
     const startPerf = performance.now();
     const method = (init?.method || request?.method || 'GET').toUpperCase();
-    const requestHeaders = headersToObject(
-      new Headers(init?.headers ?? request?.headers ?? undefined)
-    );
     const { endpoint, queryParams } = parseUrl(url);
     const requestBodyRaw = extractRequestBodyRaw(init?.body ?? null);
 

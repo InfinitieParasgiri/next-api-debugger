@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ApiDebuggerProps } from '../types';
 import { logStore } from '../core/logStore';
+import { consoleStore } from '../core/consoleStore';
 import { installFetchInterceptor, uninstallFetchInterceptor } from '../core/interceptors/fetchInterceptor';
+import { installXhrInterceptor, uninstallXhrInterceptor } from '../core/interceptors/xhrInterceptor';
 import { installAxiosInterceptor } from '../core/interceptors/axiosInterceptor';
+import { installConsoleInterceptor, uninstallConsoleInterceptor } from '../core/interceptors/consoleInterceptor';
 import { useApiLogs } from '../hooks/useApiLogs';
+import { useConsoleLogs } from '../hooks/useConsoleLogs';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
 import { StyleInjector } from './StyleInjector';
 import { FloatingButton } from './FloatingButton';
@@ -37,14 +41,20 @@ export function ApiDebugger(props: ApiDebuggerProps) {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(themeProp);
   const { logs, clear, togglePin } = useApiLogs();
+  const { entries: consoleEntries, clear: clearConsole } = useConsoleLogs();
 
   useEffect(() => {
     if (!isEnabled || typeof window === 'undefined') return;
     logStore.setMaxLogs(maxLogs);
+    consoleStore.setMaxEntries(500);
     installFetchInterceptor({ ignoreUrls });
+    installXhrInterceptor({ ignoreUrls });
+    installConsoleInterceptor();
     const uninstallAxios = axiosInstance ? installAxiosInterceptor(axiosInstance, { ignoreUrls }) : () => {};
     return () => {
       uninstallFetchInterceptor();
+      uninstallXhrInterceptor();
+      uninstallConsoleInterceptor();
       uninstallAxios();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -54,20 +64,28 @@ export function ApiDebugger(props: ApiDebuggerProps) {
 
   if (!isEnabled) return null;
 
-  const errorCount = logs.filter((l) => !l.success).length;
+  const networkErrors = logs.filter((l) => !l.success).length;
+  const consoleErrors = consoleEntries.filter((e) => e.level === 'error').length;
   const resolvedTheme = theme === 'system' ? 'dark' : theme;
 
   return (
     <div className={`apd-root${resolvedTheme === 'light' ? ' apd-light' : ''}`}>
       <StyleInjector />
       {!open && (
-        <FloatingButton count={logs.length} hasErrors={errorCount > 0} onOpen={() => setOpen(true)} initialPosition={initialPosition} />
+        <FloatingButton
+          count={logs.length + consoleEntries.length}
+          hasErrors={networkErrors > 0 || consoleErrors > 0}
+          onOpen={() => setOpen(true)}
+          initialPosition={initialPosition}
+        />
       )}
       {open && (
         <DebuggerModal
           logs={logs}
+          consoleEntries={consoleEntries}
           onClose={() => setOpen(false)}
           onClear={clear}
+          onClearConsole={clearConsole}
           onTogglePin={togglePin}
           theme={resolvedTheme}
           onToggleTheme={() => setTheme(resolvedTheme === 'light' ? 'dark' : 'light')}

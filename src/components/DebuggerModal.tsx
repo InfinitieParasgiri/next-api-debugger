@@ -1,26 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ApiLogEntry, HttpMethod, LogFilterState } from '../types';
+import { ApiLogEntry, ConsoleLevel, ConsoleLogEntry, HttpMethod, LogFilterState } from '../types';
 import { SearchBar } from './SearchBar';
 import { FilterBar } from './FilterBar';
 import { RequestList } from './RequestList';
 import { RequestDetail } from './RequestDetail';
+import { ConsoleView } from './ConsoleView';
 import { exportAsHar, downloadJson } from '../core/harExporter';
+import { classNames } from '../core/utils';
 
 interface DebuggerModalProps {
   logs: ApiLogEntry[];
+  consoleEntries: ConsoleLogEntry[];
   onClose: () => void;
   onClear: () => void;
+  onClearConsole: () => void;
   onTogglePin: (id: string) => void;
   theme: 'light' | 'dark' | 'system';
   onToggleTheme: () => void;
 }
 
 const ALL_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+const CONSOLE_LEVELS: ConsoleLevel[] = ['log', 'info', 'warn', 'error', 'debug'];
 
-export function DebuggerModal({ logs, onClose, onClear, onTogglePin, theme, onToggleTheme }: DebuggerModalProps) {
+export function DebuggerModal({
+  logs,
+  consoleEntries,
+  onClose,
+  onClear,
+  onClearConsole,
+  onTogglePin,
+  theme,
+  onToggleTheme,
+}: DebuggerModalProps) {
+  const [tab, setTab] = useState<'network' | 'console'>('network');
   const [filter, setFilter] = useState<LogFilterState>({ search: '', status: 'all', methods: [] });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
+  const [consoleSearch, setConsoleSearch] = useState('');
+  const [consoleLevels, setConsoleLevels] = useState<ConsoleLevel[]>([]);
 
   useEffect(() => {
     if (!selectedId && logs.length > 0) setSelectedId(logs[0].id);
@@ -40,14 +57,28 @@ export function DebuggerModal({ logs, onClose, onClear, onTogglePin, theme, onTo
     });
   }, [logs, filter]);
 
+  const filteredConsole = useMemo(() => {
+    const search = consoleSearch.trim().toLowerCase();
+    return consoleEntries.filter((entry) => {
+      if (consoleLevels.length > 0 && !consoleLevels.includes(entry.level)) return false;
+      if (search && !entry.preview.toLowerCase().includes(search)) return false;
+      return true;
+    });
+  }, [consoleEntries, consoleSearch, consoleLevels]);
+
   const selected = filtered.find((l) => l.id === selectedId) ?? filtered[0] ?? null;
   const errorCount = logs.filter((l) => !l.success).length;
+  const consoleErrorCount = consoleEntries.filter((e) => e.level === 'error').length;
 
   function toggleMethod(method: HttpMethod) {
     setFilter((f) => ({
       ...f,
       methods: f.methods.includes(method) ? f.methods.filter((m) => m !== method) : [...f.methods, method],
     }));
+  }
+
+  function toggleConsoleLevel(level: ConsoleLevel) {
+    setConsoleLevels((l) => (l.includes(level) ? l.filter((x) => x !== level) : [...l, level]));
   }
 
   return (
@@ -59,29 +90,40 @@ export function DebuggerModal({ logs, onClose, onClear, onTogglePin, theme, onTo
             API Debugger
           </div>
           <span className="apd-header-count">
-            {logs.length} requests{errorCount > 0 ? ` · ${errorCount} failed` : ''}
+            {tab === 'network'
+              ? `${logs.length} requests${errorCount > 0 ? ` · ${errorCount} failed` : ''}`
+              : `${consoleEntries.length} logs${consoleErrorCount > 0 ? ` · ${consoleErrorCount} errors` : ''}`}
           </span>
           <div className="apd-spacer" />
           <button className="apd-icon-btn" onClick={onToggleTheme} title="Toggle theme" type="button">
             {theme === 'light' ? '☀' : '☾'}
           </button>
+          {tab === 'network' && (
+            <>
+              <button
+                className="apd-icon-btn"
+                title="Export JSON"
+                type="button"
+                onClick={() => downloadJson(`api-logs-${Date.now()}.json`, logs)}
+              >
+                ⭳
+              </button>
+              <button
+                className="apd-icon-btn"
+                title="Export HAR"
+                type="button"
+                onClick={() => downloadJson(`api-logs-${Date.now()}.har`, exportAsHar(logs))}
+              >
+                HAR
+              </button>
+            </>
+          )}
           <button
             className="apd-icon-btn"
-            title="Export JSON"
+            title={tab === 'network' ? 'Clear logs' : 'Clear console'}
             type="button"
-            onClick={() => downloadJson(`api-logs-${Date.now()}.json`, logs)}
+            onClick={tab === 'network' ? onClear : onClearConsole}
           >
-            ⭳
-          </button>
-          <button
-            className="apd-icon-btn"
-            title="Export HAR"
-            type="button"
-            onClick={() => downloadJson(`api-logs-${Date.now()}.har`, exportAsHar(logs))}
-          >
-            HAR
-          </button>
-          <button className="apd-icon-btn" title="Clear logs" type="button" onClick={onClear}>
             🗑
           </button>
           <button
@@ -99,20 +141,74 @@ export function DebuggerModal({ logs, onClose, onClear, onTogglePin, theme, onTo
 
         {!minimized && (
           <>
-            <div className="apd-toolbar">
-              <SearchBar value={filter.search} onChange={(search) => setFilter((f) => ({ ...f, search }))} />
-              <FilterBar
-                status={filter.status}
-                onStatusChange={(status) => setFilter((f) => ({ ...f, status }))}
-                methods={ALL_METHODS}
-                activeMethods={filter.methods}
-                onToggleMethod={toggleMethod}
-              />
+            <div className="apd-tabs">
+              <button
+                type="button"
+                className={classNames('apd-tab', tab === 'network' && 'apd-active')}
+                onClick={() => setTab('network')}
+              >
+                Network
+                {logs.length > 0 && (
+                  <span className={classNames('apd-tab-badge', errorCount > 0 && 'apd-tab-badge-error')}>
+                    {logs.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={classNames('apd-tab', tab === 'console' && 'apd-active')}
+                onClick={() => setTab('console')}
+              >
+                Console
+                {consoleEntries.length > 0 && (
+                  <span className={classNames('apd-tab-badge', consoleErrorCount > 0 && 'apd-tab-badge-error')}>
+                    {consoleEntries.length}
+                  </span>
+                )}
+              </button>
             </div>
-            <div className="apd-body">
-              <RequestList logs={filtered} selectedId={selected?.id ?? null} onSelect={setSelectedId} onTogglePin={onTogglePin} />
-              <RequestDetail log={selected} onTogglePin={onTogglePin} />
-            </div>
+
+            {tab === 'network' ? (
+              <>
+                <div className="apd-toolbar">
+                  <SearchBar value={filter.search} onChange={(search) => setFilter((f) => ({ ...f, search }))} />
+                  <FilterBar
+                    status={filter.status}
+                    onStatusChange={(status) => setFilter((f) => ({ ...f, status }))}
+                    methods={ALL_METHODS}
+                    activeMethods={filter.methods}
+                    onToggleMethod={toggleMethod}
+                  />
+                </div>
+                <div className="apd-body">
+                  <RequestList
+                    logs={filtered}
+                    selectedId={selected?.id ?? null}
+                    onSelect={setSelectedId}
+                    onTogglePin={onTogglePin}
+                  />
+                  <RequestDetail log={selected} onTogglePin={onTogglePin} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="apd-toolbar">
+                  <SearchBar value={consoleSearch} onChange={setConsoleSearch} />
+                  {CONSOLE_LEVELS.map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      className={classNames('apd-chip', consoleLevels.includes(level) && 'apd-active')}
+                      onClick={() => toggleConsoleLevel(level)}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+                <ConsoleView entries={filteredConsole} />
+              </>
+            )}
+
             <div className="apd-footer">
               <span>
                 <span className="apd-kbd">Ctrl</span>+<span className="apd-kbd">Shift</span>+<span className="apd-kbd">D</span> to toggle

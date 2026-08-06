@@ -8,7 +8,7 @@ export type HttpMethod =
   | 'OPTIONS'
   | string;
 
-export type RequestSource = 'fetch' | 'axios';
+export type RequestSource = 'fetch' | 'axios' | 'xhr';
 
 export interface ApiLogEntry {
   id: string;
@@ -57,4 +57,22 @@ export interface LogFilterState {
   search: string;
   status: StatusFilter;
   methods: HttpMethod[];
+}
+
+export type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
+export type ConsoleSource = 'console' | 'window.onerror' | 'unhandledrejection';
+
+export interface ConsoleLogEntry {
+  id: string;
+  level: ConsoleLevel;
+  /** Each console.log(a, b, c) argument, pretty-printed independently — kept
+   *  separate (not pre-joined) so the UI can render/highlight each one the
+   *  same way the browser devtools console does. */
+  parts: string[];
+  /** Single-line preview for the collapsed list row. */
+  preview: string;
+  stack: string | null;
+  timestamp: number;
+  source: ConsoleSource;
+  count: number;
 }

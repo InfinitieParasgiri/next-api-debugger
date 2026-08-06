@@ -1,12 +1,18 @@
 {
   "name": "next-api-debugger",
-  "version": "0.1.0",
-  "description": "A lightweight, draggable, floating API debugger overlay for Next.js apps. Captures fetch/axios requests in-session with cURL export, JSON viewer, HAR export and more.",
+  "version": "0.2.0",
+  "description": "A lightweight, draggable, floating API debugger. Framework-agnostic (plain HTML, Vue, Angular, Laravel Blade, or any site) with a first-class React/Next.js component. Captures fetch/XHR/axios requests in-session with cURL export, JSON search, HAR export and more.",
   "license": "MIT",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
-  "sideEffects": false,
+  "unpkg": "dist/next-api-debugger.global.js",
+  "jsdelivr": "dist/next-api-debugger.global.js",
+  "sideEffects": [
+    "dist/standalone.js",
+    "dist/standalone.mjs",
+    "dist/next-api-debugger.global.js"
+  ],
   "files": [
     "dist"
   ],
@@ -15,6 +21,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./standalone": {
+      "types": "./dist/standalone.d.ts",
+      "import": "./dist/standalone.mjs",
+      "require": "./dist/standalone.js"
     }
   },
   "scripts": {
@@ -29,6 +40,12 @@
   },
   "peerDependenciesMeta": {
     "axios": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },
@@ -45,10 +62,17 @@
   "keywords": [
     "nextjs",
     "react",
+    "vue",
+    "angular",
+    "laravel",
+    "javascript",
     "debugger",
     "api",
     "fetch",
+    "xhr",
     "axios",
-    "devtools"
+    "devtools",
+    "framework-agnostic"
   ]
 }
+
