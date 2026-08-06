@@ -1,6 +1,7 @@
 import { logStore } from '../core/logStore';
 import { consoleStore } from '../core/consoleStore';
 import { css } from '../core/styles';
+import { watchHoldCombo } from '../core/holdCombo';
 import { el } from './dom';
 import { createFloatingButton } from './floatingButton';
 import { createModal } from './modal';
@@ -78,11 +79,24 @@ export function mountVanillaUi(options: VanillaUiOptions = {}): VanillaUiHandle 
     window.addEventListener('keydown', onKeyDown);
   }
 
+  // Hold Space+H to fully hide (or reveal) the whole debugger — button and
+  // modal both — separate from the modal open/close toggle above.
+  let hidden = false;
+  const unwatchHideCombo =
+    options.keyboardShortcut !== false
+      ? watchHoldCombo(['space', 'h'], () => {
+          hidden = !hidden;
+          if (hidden) modal.close();
+          root.style.display = hidden ? 'none' : '';
+        })
+      : () => {};
+
   return {
     destroy() {
       unsubscribeLogs();
       unsubscribeConsole();
       window.removeEventListener('keydown', onKeyDown);
+      unwatchHideCombo();
       root.remove();
     },
   };

@@ -9,6 +9,7 @@ import { installConsoleInterceptor, uninstallConsoleInterceptor } from '../core/
 import { useApiLogs } from '../hooks/useApiLogs';
 import { useConsoleLogs } from '../hooks/useConsoleLogs';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
+import { useHoldCombo } from '../hooks/useHoldCombo';
 import { StyleInjector } from './StyleInjector';
 import { FloatingButton } from './FloatingButton';
 import { DebuggerModal } from './DebuggerModal';
@@ -39,6 +40,7 @@ export function ApiDebugger(props: ApiDebuggerProps) {
 
   const isEnabled = resolveEnabled(enabled);
   const [open, setOpen] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(themeProp);
   const { logs, clear, togglePin } = useApiLogs();
   const { entries: consoleEntries, clear: clearConsole } = useConsoleLogs();
@@ -62,6 +64,19 @@ export function ApiDebugger(props: ApiDebuggerProps) {
 
   useKeyboardShortcut({ ctrl: true, shift: true, key: 'd' }, () => setOpen((o) => !o), isEnabled && keyboardShortcut);
 
+  // Hold Space+H together to fully hide (or reveal) the debugger — button
+  // and modal both — without touching the mount toggle from the shortcut
+  // above. Also closes the modal on hide, so it doesn't silently reappear
+  // still-open the next time the debugger is shown.
+  useHoldCombo(
+    ['space', 'h'],
+    () => {
+      setHidden((h) => !h);
+      setOpen(false);
+    },
+    isEnabled && keyboardShortcut
+  );
+
   if (!isEnabled) return null;
 
   const networkErrors = logs.filter((l) => !l.success).length;
@@ -71,7 +86,7 @@ export function ApiDebugger(props: ApiDebuggerProps) {
   return (
     <div className={`apd-root${resolvedTheme === 'light' ? ' apd-light' : ''}`}>
       <StyleInjector />
-      {!open && (
+      {!hidden && !open && (
         <FloatingButton
           count={logs.length + consoleEntries.length}
           hasErrors={networkErrors > 0 || consoleErrors > 0}
@@ -79,7 +94,7 @@ export function ApiDebugger(props: ApiDebuggerProps) {
           initialPosition={initialPosition}
         />
       )}
-      {open && (
+      {!hidden && open && (
         <DebuggerModal
           logs={logs}
           consoleEntries={consoleEntries}

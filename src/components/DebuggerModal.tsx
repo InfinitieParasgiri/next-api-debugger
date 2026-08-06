@@ -211,7 +211,8 @@ export function DebuggerModal({
 
             <div className="apd-footer">
               <span>
-                <span className="apd-kbd">Ctrl</span>+<span className="apd-kbd">Shift</span>+<span className="apd-kbd">D</span> to toggle
+                <span className="apd-kbd">Ctrl</span>+<span className="apd-kbd">Shift</span>+<span className="apd-kbd">D</span> to
+                toggle · <span className="apd-kbd">Space</span>+<span className="apd-kbd">H</span> to hide
               </span>
               <span style={{ marginLeft: 'auto' }}>next-api-debugger · dev only</span>
             </div>

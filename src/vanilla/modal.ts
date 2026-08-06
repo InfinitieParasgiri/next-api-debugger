@@ -120,7 +120,11 @@ export function createModal(
       el('span', { class: 'apd-kbd' }, ['Shift']),
       '+',
       el('span', { class: 'apd-kbd' }, ['D']),
-      ' to toggle',
+      ' to toggle · ',
+      el('span', { class: 'apd-kbd' }, ['Space']),
+      '+',
+      el('span', { class: 'apd-kbd' }, ['H']),
+      ' to hide',
     ]),
     el('span', { style: 'margin-left:auto' }, ['api-debugger · dev only']),
   ]);

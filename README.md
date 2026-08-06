@@ -33,7 +33,8 @@ dev-only by default.
 - Expand/collapse sections, syntax-highlighted JSON (no external highlighter dep)
 - Export all logs as **JSON** or **HAR**
 - Pin favorite requests, dark/light theme, minimize/maximize
-- `Ctrl/Cmd+Shift+D` keyboard shortcut
+- `Ctrl/Cmd+Shift+D` keyboard shortcut to open/close, `Space+H` (held together)
+  to fully hide/show the whole debugger
 - Capped in-memory log (default 200 requests / 500 console entries),
   session-only — nothing persisted, no backend
 - Dev-only by default, one prop/flag to force on/off, zero required CSS import
@@ -207,7 +208,7 @@ Available on both the React `<ApiDebugger />` component and `initApiDebugger()`:
 | `maxLogs` | `number` | `200` | Max requests kept in memory. |
 | `initialPosition` | `{ x, y }` | bottom-right | Starting position of the floating button. |
 | `axiosInstance` | `AxiosInstance` | — | Also intercept this axios instance. |
-| `keyboardShortcut` | `boolean` | `true` | Enable `Ctrl/Cmd+Shift+D` toggle. |
+| `keyboardShortcut` | `boolean` | `true` | Enable `Ctrl/Cmd+Shift+D` (toggle open) and `Space+H` (toggle fully hidden). |
 | `ignoreUrls` | `(string \| RegExp)[]` | — | Skip matching URLs (e.g. analytics beacons). |
 | `captureXhr`* | `boolean` | `true` | Also capture raw `XMLHttpRequest` calls. |
 | `captureConsole`* | `boolean` | `true` | Also capture console output and uncaught errors. |
