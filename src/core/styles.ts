@@ -491,6 +491,133 @@ export const css = `
   margin-top: 3px;
 }
 
+.apd-inspect-highlight {
+  position: fixed;
+  pointer-events: none;
+  z-index: 2147483001;
+  background: rgba(34,211,238,0.18);
+  outline: 1.5px solid var(--apd-accent);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+  border-radius: 2px;
+}
+
+.apd-inspector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--apd-text-dim);
+}
+.apd-inspector-empty p { margin: 0; font-size: 12.5px; color: var(--apd-text-faint); max-width: 320px; }
+.apd-inspect-start-btn {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--apd-accent);
+  background: var(--apd-accent-dim);
+  color: #ecfeff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.apd-inspect-start-btn:hover { background: var(--apd-accent); color: #041318; }
+.apd-inspect-start-btn.apd-inspecting { background: var(--apd-error); border-color: var(--apd-error); color: #2b0707; }
+
+.apd-inspector-body { padding: 16px; overflow-y: auto; flex: 1; }
+.apd-inspector-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--apd-mono);
+  font-size: 11px;
+  color: var(--apd-text-dim);
+  margin-bottom: 12px;
+}
+.apd-inspector-breadcrumb span:not(:last-child)::after { content: '›'; margin: 0 4px; color: var(--apd-text-faint); }
+.apd-inspector-tag {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: var(--apd-mono);
+  margin-bottom: 2px;
+}
+.apd-inspector-tag .apd-tag-id { color: var(--apd-warn); }
+.apd-inspector-tag .apd-tag-class { color: #86efac; }
+
+.apd-source-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--apd-border);
+  background: var(--apd-panel-alt);
+  margin-bottom: 14px;
+}
+.apd-source-path {
+  font-family: var(--apd-mono);
+  font-size: 12.5px;
+  word-break: break-all;
+  display: block;
+  color: var(--apd-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+.apd-source-path.apd-source-path-plain { color: var(--apd-text); cursor: text; }
+.apd-source-path:hover.apd-source-path:not(.apd-source-path-plain) { text-decoration: underline; }
+.apd-source-meta { display: flex; align-items: center; gap: 8px; margin-top: 5px; font-size: 10.5px; color: var(--apd-text-faint); }
+.apd-confidence-badge {
+  font-family: var(--apd-mono);
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--apd-border);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.apd-confidence-badge.apd-confidence-exact { color: var(--apd-success); border-color: var(--apd-success); }
+.apd-confidence-badge.apd-confidence-approximate { color: var(--apd-warn); border-color: var(--apd-warn); }
+.apd-source-none { color: var(--apd-text-faint); font-size: 12px; }
+
+.apd-box-model { display: flex; justify-content: center; padding: 10px 0 18px; }
+.apd-box-layer {
+  border: 1px dashed var(--apd-border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  position: relative;
+  padding: 18px;
+}
+.apd-box-layer-margin { background: rgba(251,191,36,0.08); }
+.apd-box-layer-border { background: rgba(251,191,36,0.03); border-style: solid; }
+.apd-box-layer-padding { background: rgba(52,211,153,0.1); }
+.apd-box-layer-content {
+  background: rgba(34,211,238,0.18);
+  min-width: 50px;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--apd-mono);
+  font-size: 10.5px;
+  color: var(--apd-text);
+  padding: 6px 10px;
+  border-radius: 2px;
+}
+.apd-box-label {
+  position: absolute;
+  font-family: var(--apd-mono);
+  font-size: 9px;
+  color: var(--apd-text-faint);
+}
+.apd-box-label-top { top: 1px; left: 50%; transform: translateX(-50%); }
+.apd-box-label-right { right: 3px; top: 50%; transform: translateY(-50%); }
+.apd-box-label-bottom { bottom: 1px; left: 50%; transform: translateX(-50%); }
+.apd-box-label-left { left: 3px; top: 50%; transform: translateY(-50%); }
+
 .apd-footer {
   display: flex;
   align-items: center;

@@ -20,6 +20,8 @@ function injectStyles() {
 export interface VanillaUiOptions {
   initialPosition?: { x: number; y: number };
   keyboardShortcut?: boolean;
+  inspectorEnabled?: boolean;
+  editorProjectRoot?: string;
 }
 
 export interface VanillaUiHandle {
@@ -44,7 +46,8 @@ export function mountVanillaUi(options: VanillaUiOptions = {}): VanillaUiHandle 
     () => consoleStore.clear(),
     (isOpen) => {
       button.el.style.display = isOpen ? 'none' : '';
-    }
+    },
+    { inspectorEnabled: options.inspectorEnabled, editorProjectRoot: options.editorProjectRoot }
   );
 
   root.appendChild(button.el);

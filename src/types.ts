@@ -49,6 +49,17 @@ export interface ApiDebuggerProps {
   keyboardShortcut?: boolean;
   /** URL patterns to exclude from capture. */
   ignoreUrls?: (string | RegExp)[];
+  /** Enable the Inspector tab (element picker + source mapping). Defaults to true. */
+  inspector?: boolean;
+  /**
+   * Absolute path to your project root on disk, e.g. '/Users/you/project'.
+   * Without this, source locations are shown as text only (still copyable);
+   * with it, they become clickable `vscode://file/...` links that jump
+   * straight to the line in VS Code. There's no way to derive this
+   * automatically — the browser only ever sees served paths, never your
+   * local filesystem layout.
+   */
+  editorProjectRoot?: string;
 }
 
 export type StatusFilter = 'all' | 'success' | 'failed';
@@ -75,4 +86,55 @@ export interface ConsoleLogEntry {
   timestamp: number;
   source: ConsoleSource;
   count: number;
+}
+
+// --- Inspector -------------------------------------------------------------
+
+export type SourceOrigin = 'react' | 'vue' | 'stack-trace' | 'plain-html';
+/** 'exact' = a build-time debug attribute told us directly (React __source,
+ *  Vue __file). 'approximate' = inferred (stack-trace frame, text-search
+ *  against the page's own HTML) — right most of the time, but not certain. */
+export type SourceConfidence = 'exact' | 'approximate';
+
+export interface SourceLocation {
+  file: string;
+  line?: number;
+  column?: number;
+  confidence: SourceConfidence;
+  origin: SourceOrigin;
+}
+
+export interface ElementAncestor {
+  tag: string;
+  id: string | null;
+  classes: string[];
+}
+
+export interface BoxSides {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface BoxModel {
+  margin: BoxSides;
+  border: BoxSides;
+  padding: BoxSides;
+  content: { width: number; height: number };
+}
+
+export interface ElementInfo {
+  tag: string;
+  id: string | null;
+  classes: string[];
+  attributes: Record<string, string>;
+  rect: { x: number; y: number; width: number; height: number };
+  box: BoxModel;
+  computedStyles: Record<string, string>;
+  ancestors: ElementAncestor[];
+  childCount: number;
+  textPreview: string | null;
+  componentName: string | null;
+  source: SourceLocation | null;
 }

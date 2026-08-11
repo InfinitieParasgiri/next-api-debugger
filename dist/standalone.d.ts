@@ -20,6 +20,15 @@ interface InitOptions {
     captureXhr?: boolean;
     /** Also capture console.log/warn/error, uncaught errors, and unhandled promise rejections. Defaults to true. */
     captureConsole?: boolean;
+    /** Enable the Inspector tab (element picker + source mapping). Defaults to true. */
+    inspector?: boolean;
+    /**
+     * Absolute path to your project root on disk, e.g. '/Users/you/project'.
+     * Without this, source locations in the Inspector are shown as text only
+     * (still copyable); with it, they become clickable `vscode://file/...`
+     * links that jump straight to the line in VS Code.
+     */
+    editorProjectRoot?: string;
 }
 interface ApiDebuggerInstance {
     /** Removes the UI and reverses all patched globals (fetch/XHR/axios). */

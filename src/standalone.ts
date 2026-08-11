@@ -4,6 +4,7 @@ import { installFetchInterceptor, uninstallFetchInterceptor } from './core/inter
 import { installXhrInterceptor, uninstallXhrInterceptor } from './core/interceptors/xhrInterceptor';
 import { installAxiosInterceptor } from './core/interceptors/axiosInterceptor';
 import { installConsoleInterceptor, uninstallConsoleInterceptor } from './core/interceptors/consoleInterceptor';
+import { installCreationTracker, uninstallCreationTracker } from './core/inspector/creationTracker';
 import { mountVanillaUi, VanillaUiHandle } from './vanilla/createUi';
 
 export interface InitOptions {
@@ -25,6 +26,15 @@ export interface InitOptions {
   captureXhr?: boolean;
   /** Also capture console.log/warn/error, uncaught errors, and unhandled promise rejections. Defaults to true. */
   captureConsole?: boolean;
+  /** Enable the Inspector tab (element picker + source mapping). Defaults to true. */
+  inspector?: boolean;
+  /**
+   * Absolute path to your project root on disk, e.g. '/Users/you/project'.
+   * Without this, source locations in the Inspector are shown as text only
+   * (still copyable); with it, they become clickable `vscode://file/...`
+   * links that jump straight to the line in VS Code.
+   */
+  editorProjectRoot?: string;
 }
 
 export interface ApiDebuggerInstance {
@@ -75,6 +85,9 @@ export function initApiDebugger(options: InitOptions = {}): ApiDebuggerInstance 
   if (options.captureConsole !== false) {
     installConsoleInterceptor();
   }
+  if (options.inspector !== false) {
+    installCreationTracker();
+  }
   const uninstallAxios = options.axiosInstance
     ? installAxiosInterceptor(options.axiosInstance, { ignoreUrls: options.ignoreUrls })
     : () => {};
@@ -82,6 +95,8 @@ export function initApiDebugger(options: InitOptions = {}): ApiDebuggerInstance 
   const ui: VanillaUiHandle = mountVanillaUi({
     initialPosition: options.initialPosition,
     keyboardShortcut: options.keyboardShortcut,
+    inspectorEnabled: options.inspector !== false,
+    editorProjectRoot: options.editorProjectRoot,
   });
 
   const instance: ApiDebuggerInstance = {
@@ -89,6 +104,7 @@ export function initApiDebugger(options: InitOptions = {}): ApiDebuggerInstance 
       uninstallFetchInterceptor();
       uninstallXhrInterceptor();
       uninstallConsoleInterceptor();
+      if (options.inspector !== false) uninstallCreationTracker();
       uninstallAxios();
       ui.destroy();
       if (activeInstance === instance) activeInstance = null;

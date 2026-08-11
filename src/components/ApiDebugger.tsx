@@ -6,6 +6,7 @@ import { installFetchInterceptor, uninstallFetchInterceptor } from '../core/inte
 import { installXhrInterceptor, uninstallXhrInterceptor } from '../core/interceptors/xhrInterceptor';
 import { installAxiosInterceptor } from '../core/interceptors/axiosInterceptor';
 import { installConsoleInterceptor, uninstallConsoleInterceptor } from '../core/interceptors/consoleInterceptor';
+import { installCreationTracker, uninstallCreationTracker } from '../core/inspector/creationTracker';
 import { useApiLogs } from '../hooks/useApiLogs';
 import { useConsoleLogs } from '../hooks/useConsoleLogs';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
@@ -36,6 +37,8 @@ export function ApiDebugger(props: ApiDebuggerProps) {
     theme: themeProp = 'dark',
     keyboardShortcut = true,
     ignoreUrls,
+    inspector = true,
+    editorProjectRoot,
   } = props;
 
   const isEnabled = resolveEnabled(enabled);
@@ -52,15 +55,17 @@ export function ApiDebugger(props: ApiDebuggerProps) {
     installFetchInterceptor({ ignoreUrls });
     installXhrInterceptor({ ignoreUrls });
     installConsoleInterceptor();
+    if (inspector) installCreationTracker();
     const uninstallAxios = axiosInstance ? installAxiosInterceptor(axiosInstance, { ignoreUrls }) : () => {};
     return () => {
       uninstallFetchInterceptor();
       uninstallXhrInterceptor();
       uninstallConsoleInterceptor();
+      if (inspector) uninstallCreationTracker();
       uninstallAxios();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEnabled]);
+  }, [isEnabled, inspector]);
 
   useKeyboardShortcut({ ctrl: true, shift: true, key: 'd' }, () => setOpen((o) => !o), isEnabled && keyboardShortcut);
 
@@ -104,6 +109,8 @@ export function ApiDebugger(props: ApiDebuggerProps) {
           onTogglePin={togglePin}
           theme={resolvedTheme}
           onToggleTheme={() => setTheme(resolvedTheme === 'light' ? 'dark' : 'light')}
+          inspectorEnabled={inspector}
+          editorProjectRoot={editorProjectRoot}
         />
       )}
     </div>

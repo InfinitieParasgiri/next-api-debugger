@@ -4,9 +4,12 @@ import { el } from './dom';
 import { createRequestList } from './requestList';
 import { createRequestDetail } from './requestDetail';
 import { createConsoleView } from './consoleView';
+import { createInspectorView } from './inspectorView';
 
 const ALL_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const CONSOLE_LEVELS: ConsoleLevel[] = ['log', 'info', 'warn', 'error', 'debug'];
+
+type Tab = 'network' | 'console' | 'inspector';
 
 export interface ModalWidget {
   el: HTMLElement;
@@ -28,13 +31,21 @@ function searchBox(placeholder: string): { el: HTMLElement; input: HTMLInputElem
   return { el: el('div', { class: 'apd-search' }, [icon, input]), input };
 }
 
+export interface ModalOptions {
+  inspectorEnabled?: boolean;
+  editorProjectRoot?: string;
+}
+
 export function createModal(
   onTogglePin: (id: string) => void,
   onClear: () => void,
   onClearConsole: () => void,
-  onCloseChange?: (isOpen: boolean) => void
+  onCloseChange: ((isOpen: boolean) => void) | undefined,
+  options: ModalOptions = {}
 ): ModalWidget {
-  let tab: 'network' | 'console' = 'network';
+  const inspectorEnabled = options.inspectorEnabled ?? true;
+
+  let tab: Tab = 'network';
   let filter: LogFilterState = { search: '', status: 'all', methods: [] };
   let consoleSearch = '';
   let consoleLevels: ConsoleLevel[] = [];
@@ -54,6 +65,9 @@ export function createModal(
   );
   const detail = createRequestDetail(onTogglePin);
   const consoleView = createConsoleView();
+  const inspectorView = inspectorEnabled
+    ? createInspectorView((active) => setMinimized(active), options.editorProjectRoot)
+    : null;
 
   const countEl = el('span', { class: 'apd-header-count' });
   const themeBtn = el('button', { class: 'apd-icon-btn', title: 'Toggle theme', type: 'button' }, ['☾']);
@@ -109,9 +123,12 @@ export function createModal(
   // --- Tabs ---
   const networkTab = el('button', { type: 'button', class: 'apd-tab apd-active' }, ['Network']);
   const consoleTab = el('button', { type: 'button', class: 'apd-tab' }, ['Console']);
-  const tabs = el('div', { class: 'apd-tabs' }, [networkTab, consoleTab]);
+  const inspectorTab = el('button', { type: 'button', class: 'apd-tab' }, ['Inspector']);
+  const tabButtons = [networkTab, consoleTab, ...(inspectorEnabled ? [inspectorTab] : [])];
+  const tabs = el('div', { class: 'apd-tabs' }, tabButtons);
   networkTab.addEventListener('click', () => switchTab('network'));
   consoleTab.addEventListener('click', () => switchTab('console'));
+  inspectorTab.addEventListener('click', () => switchTab('inspector'));
 
   const footer = el('div', { class: 'apd-footer' }, [
     el('span', {}, [
@@ -147,8 +164,10 @@ export function createModal(
     closeBtn,
   ]);
 
-  const body = el('div', {}, [networkBody, consoleView.el]);
+  const bodyChildren = [networkBody, consoleView.el, ...(inspectorView ? [inspectorView.el] : [])];
+  const body = el('div', { style: 'display:flex;flex-direction:column;flex:1;overflow:hidden' }, bodyChildren);
   consoleView.el.style.display = 'none';
+  if (inspectorView) inspectorView.el.style.display = 'none';
 
   const modal = el('div', { class: 'apd-modal' }, [header, tabs, networkToolbar, consoleToolbar, body, footer]);
   modal.addEventListener('click', (e) => e.stopPropagation());
@@ -156,16 +175,25 @@ export function createModal(
 
   overlay.addEventListener('click', () => close());
   closeBtn.addEventListener('click', () => close());
-  minimizeBtn.addEventListener('click', () => {
-    minimized = !minimized;
+
+  /**
+   * Shared by the minimize button AND the Inspector's own "get out of the
+   * way while picking" request — both need to collapse the modal down to
+   * just its header without touching the Inspector's own DOM (it must stay
+   * mounted, not torn down, or an in-flight element pick would be lost).
+   */
+  function setMinimized(next: boolean) {
+    minimized = next;
     modal.classList.toggle('apd-minimized', minimized);
+    minimizeBtn.textContent = minimized ? '▢' : '—';
     tabs.style.display = minimized ? 'none' : '';
     networkToolbar.style.display = minimized || tab !== 'network' ? 'none' : '';
     consoleToolbar.style.display = minimized || tab !== 'console' ? 'none' : '';
     body.style.display = minimized ? 'none' : '';
     footer.style.display = minimized ? 'none' : '';
-    minimizeBtn.textContent = minimized ? '▢' : '—';
-  });
+  }
+
+  minimizeBtn.addEventListener('click', () => setMinimized(!minimized));
   clearBtn.addEventListener('click', () => (tab === 'network' ? onClear() : onClearConsole()));
   jsonBtn.addEventListener('click', () => downloadJson(`api-logs-${Date.now()}.json`, latestLogs));
   harBtn.addEventListener('click', () => downloadJson(`api-logs-${Date.now()}.har`, exportAsHar(latestLogs)));
@@ -176,15 +204,18 @@ export function createModal(
     rootEl?.classList.toggle('apd-light', theme === 'light');
   });
 
-  function switchTab(next: 'network' | 'console') {
+  function switchTab(next: Tab) {
     tab = next;
     networkTab.classList.toggle('apd-active', tab === 'network');
     consoleTab.classList.toggle('apd-active', tab === 'console');
+    inspectorTab.classList.toggle('apd-active', tab === 'inspector');
     networkToolbar.style.display = tab === 'network' ? '' : 'none';
     consoleToolbar.style.display = tab === 'console' ? '' : 'none';
     networkBody.style.display = tab === 'network' ? '' : 'none';
     consoleView.el.style.display = tab === 'console' ? '' : 'none';
+    if (inspectorView) inspectorView.el.style.display = tab === 'inspector' ? 'flex' : 'none';
     clearBtn.title = tab === 'network' ? 'Clear logs' : 'Clear console';
+    clearBtn.style.display = tab === 'inspector' ? 'none' : '';
     jsonBtn.style.display = tab === 'network' ? '' : 'none';
     harBtn.style.display = tab === 'network' ? '' : 'none';
     updateHeaderCount();
@@ -194,9 +225,11 @@ export function createModal(
     if (tab === 'network') {
       const errorCount = latestLogs.filter((l) => !l.success).length;
       countEl.textContent = `${latestLogs.length} requests${errorCount > 0 ? ` · ${errorCount} failed` : ''}`;
-    } else {
+    } else if (tab === 'console') {
       const errorCount = latestConsole.filter((e) => e.level === 'error').length;
       countEl.textContent = `${latestConsole.length} logs${errorCount > 0 ? ` · ${errorCount} errors` : ''}`;
+    } else {
+      countEl.textContent = 'element picker';
     }
     const netBadge =
       latestLogs.length > 0

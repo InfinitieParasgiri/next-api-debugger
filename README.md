@@ -30,6 +30,11 @@ dev-only by default.
   exceptions, and unhandled promise rejections — repeated identical messages
   collapse into one row with a count, the way browser devtools do. Filter by
   level, search, expand stack traces.
+- **Inspector tab**: devtools-style element picker. Click "Start Inspecting",
+  hover to highlight, click to select — shows the box model, computed
+  styles, attributes, DOM hierarchy, and (best-effort, in priority order)
+  the actual **source file**, line/column, and component name responsible
+  for that element. See "How source mapping works" below.
 - Expand/collapse sections, syntax-highlighted JSON (no external highlighter dep)
 - Export all logs as **JSON** or **HAR**
 - Pin favorite requests, dark/light theme, minimize/maximize
@@ -213,6 +218,8 @@ Available on both the React `<ApiDebugger />` component and `initApiDebugger()`:
 | `captureXhr`* | `boolean` | `true` | Also capture raw `XMLHttpRequest` calls. |
 | `captureConsole`* | `boolean` | `true` | Also capture console output and uncaught errors. |
 | `maxConsoleEntries`* | `number` | `500` | Max console entries kept in memory. |
+| `inspector` | `boolean` | `true` | Enable the Inspector tab (element picker + source mapping). |
+| `editorProjectRoot` | `string` | — | Absolute path to your project on disk (e.g. `/Users/you/project`). Enables click-to-open-in-VS-Code links in the Inspector's source location. Can't be inferred automatically — the browser only ever sees served paths, never your local filesystem layout. |
 | `theme`† | `'light' \| 'dark' \| 'system'` | `'dark'` | Initial theme. |
 
 \* standalone-only — the React component always captures XHR by default.
@@ -230,6 +237,58 @@ server-side environment check (see the Blade example above), or:
 ```js
 initApiDebugger({ enabled: window.location.hostname !== 'production.example.com' });
 ```
+
+## How source mapping works (Inspector tab)
+
+When you select an element, the Inspector tries to answer "what source file
+produced this?" using several mechanisms, in priority order — it stops at
+the first one that succeeds, and is honest when none of them do rather than
+guessing:
+
+1. **React fiber debug source** (exact file + line) — if the JSX dev
+   transform ran (true by default for Create React App; version-dependent
+   for Vite+React, since `@vitejs/plugin-react` v6 dropped Babel-by-default
+   for speed), React attaches `_debugSource` to every Fiber purely so React
+   DevTools can do this same "jump to source" trick — we just read it.
+2. **Vue component `__file`** (exact file, rarely a line — a `.vue` file
+   maps to one whole component, not a per-element position) — attached by
+   `vue-loader` / `@vitejs/plugin-vue` in dev mode, same idea as above but
+   Vue's own equivalent.
+3. **Deferred creation-time stack trace** (approximate) — a lightweight
+   patch on `document.createElement` remembers *where* each element was
+   created (see "Why is element creation tracked?" below), used as a
+   fallback for anything React/Vue didn't already answer. In a dev server
+   (Vite, webpack-dev-server, Angular CLI) this usually resolves to a real,
+   readable file path — those tools deliberately make stack traces
+   human-readable for exactly this kind of debugging. In a minified
+   production build it would point at a bundle location instead.
+4. **The current page's own URL** (guaranteed file, best-effort line) — the
+   last resort for elements that came straight from the browser's HTML
+   parser rather than any JS framework. The file is always known with
+   certainty (it's just the page you're on); the line number is a
+   best-effort text search against the page's own original HTML.
+
+Angular gets component name (best-effort, via the Angular DevTools global
+hook when present) but not a source file — no equivalent free runtime
+metadata was found; Angular's own "jump to template" tooling relies on
+IDE-side language-service integration rather than something readable from
+the rendered DOM.
+
+**Component name is always optional** — `null` is a normal, expected result
+(plain HTML, Angular without the devtools hook active, or a minified React
+production build all have no name to offer), and the Inspector just omits
+it rather than showing something misleading.
+
+**Why is element creation tracked?** So the deferred-stack-trace fallback
+(#3 above) can work for *already-existing* elements, not just ones created
+after you open the Inspector — by the time you click something on screen,
+whatever created it has long since returned, so there's no way to capture
+its stack trace retroactively. The tracking itself is deliberately cheap:
+constructing `new Error()` doesn't unwind or format a stack (that's a lazy
+`.stack` accessor), so the always-on cost is one WeakMap write per element
+creation — the actual expensive part (stringifying and parsing `.stack`)
+only happens if you inspect that specific element. Turn it off entirely
+with `inspector: false`.
 
 ## Advanced / manual usage
 
@@ -257,7 +316,14 @@ src/
 │   ├── styles.ts                  the injected CSS, shared by both UIs
 │   ├── logStore.ts                network log store — in-memory pub/sub (session-only, capped)
 │   ├── consoleStore.ts             console log store — same pub/sub shape, collapses repeats
+│   ├── holdCombo.ts                Space+H hide/show, shared by React hook and vanilla UI
 │   ├── utils.ts                    formatting, parsing, clipboard helpers
+│   ├── inspector/                  element picker engine — pure DOM, no React
+│   │   ├── pick.ts                  hover/click/Escape picking, excludes the debugger's own UI
+│   │   ├── highlight.ts             the hover highlight overlay box
+│   │   ├── elementInfo.ts           box model, computed styles, hierarchy, attributes
+│   │   ├── resolvers.ts             priority-ordered source/component-name resolution (see README section above)
+│   │   └── creationTracker.ts       deferred, cheap-to-install element-creation stack capture
 │   └── interceptors/
 │       ├── fetchInterceptor.ts     reversible window.fetch patch, clones responses
 │       ├── xhrInterceptor.ts       reversible XMLHttpRequest.prototype patch

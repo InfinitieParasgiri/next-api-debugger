@@ -1,0 +1,228 @@
+import { SourceLocation } from '../../types';
+import { getCreationError } from './creationTracker';
+
+// --- React -------------------------------------------------------------
+// React attaches a Fiber node to the real DOM element under a key like
+// `__reactFiber$<random>` (React 17+) or `__reactInternalInstance$<random>`
+// (React <=16). When the JSX dev-transform ran (true by default for
+// Create React App and, historically, Vite+Babel setups — but NOT
+// guaranteed for esbuild/oxc-based dev transforms as of newer
+// @vitejs/plugin-react versions, see below), each Fiber carries
+// `_debugSource = { fileName, lineNumber, columnNumber }`, which is the
+// exact mechanism React DevTools itself uses for "open in editor". This is
+// feature-detected, never assumed present.
+
+function getReactFiber(el: any): any {
+  const key = Object.keys(el).find(
+    (k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')
+  );
+  return key ? el[key] : null;
+}
+
+function resolveReactSource(el: Element): SourceLocation | null {
+  let fiber = getReactFiber(el as any);
+  while (fiber) {
+    const src = fiber._debugSource;
+    if (src && src.fileName) {
+      return {
+        file: src.fileName,
+        line: typeof src.lineNumber === 'number' ? src.lineNumber : undefined,
+        column: typeof src.columnNumber === 'number' ? src.columnNumber : undefined,
+        confidence: 'exact',
+        origin: 'react',
+      };
+    }
+    fiber = fiber.return;
+  }
+  return null;
+}
+
+function resolveReactComponentName(el: Element): string | null {
+  let fiber = getReactFiber(el as any);
+  while (fiber) {
+    const t = fiber.type;
+    if (typeof t === 'function' && t.name) return t.name;
+    if (t && typeof t === 'object' && t.displayName) return t.displayName;
+    fiber = fiber.return;
+  }
+  return null;
+}
+
+// --- Vue -----------------------------------------------------------------
+// Vue's SFC compiler (vue-loader / @vitejs/plugin-vue) attaches `__file`
+// to a component's options object in dev mode, purely for Vue DevTools'
+// own "open in editor" feature — same idea as React's _debugSource, but
+// file-level rather than line-level: a .vue file maps to one component, so
+// there's no natural "line" the way JSX has per-element source positions.
+// Only elements at (or nested under) a component root carry this, so we
+// walk up the DOM to the nearest ancestor that has it.
+
+function getVueInstance(el: any): { version: 2 | 3; inst: any } | null {
+  if (el.__vueParentComponent) return { version: 3, inst: el.__vueParentComponent };
+  if (el.__vue__) return { version: 2, inst: el.__vue__ };
+  return null;
+}
+
+function resolveVueSource(el: Element): SourceLocation | null {
+  let node: Element | null = el;
+  while (node) {
+    const found = getVueInstance(node as any);
+    if (found) {
+      const file = found.version === 3 ? found.inst.type?.__file : found.inst.$options?.__file;
+      if (file) {
+        return { file, confidence: 'exact', origin: 'vue' };
+      }
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+function resolveVueComponentName(el: Element): string | null {
+  let node: Element | null = el;
+  while (node) {
+    const found = getVueInstance(node as any);
+    if (found) {
+      const name =
+        found.version === 3
+          ? found.inst.type?.__name || found.inst.type?.name
+          : found.inst.$options?.name || found.inst.$options?._componentTag;
+      if (name) return name;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+// --- Angular ---------------------------------------------------------------
+// No equivalent free runtime metadata was found for source file mapping
+// (see design discussion) — Angular's own "jump to template" tooling
+// relies on IDE-side language-service integration, not something readable
+// from the rendered DOM. Component *name* is still available, best-effort,
+// via the Angular DevTools global hook when present.
+
+function resolveAngularComponentName(el: Element): string | null {
+  const ng = (window as any).ng;
+  if (!ng?.getComponent) return null;
+  try {
+    const comp = ng.getComponent(el);
+    return comp?.constructor?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// --- Stack-trace fallback (deferred) ---------------------------------------
+// See creationTracker.ts for why this is cheap to have installed globally.
+// The parsed frame is labeled 'approximate': in a dev server environment
+// (Vite, webpack-dev-server, Angular CLI) the frame is usually already a
+// real, human-readable source path — these tools deliberately emit
+// `//# sourceURL=` / eval-based module boundaries specifically so stack
+// traces resolve to real filenames without needing a source-map library on
+// our end. In a production/minified build the same frame would point at a
+// minified bundle location instead — still shown, but clearly the weakest
+// signal of the four.
+
+const STACK_FRAME_RE = /(?:\()?(https?:\/\/[^\s)]+|\/[^\s)]+|[A-Za-z]:\\[^\s)]+):(\d+):(\d+)\)?/;
+
+function resolveStackTraceSource(el: Element): SourceLocation | null {
+  const err = getCreationError(el);
+  if (!err?.stack) return null;
+  const lines = err.stack.split('\n').slice(1);
+  for (const raw of lines) {
+    if (/next-api-debugger|core\/inspector\//.test(raw)) continue;
+    const match = raw.match(STACK_FRAME_RE);
+    if (match) {
+      return {
+        file: match[1],
+        line: Number(match[2]),
+        column: Number(match[3]),
+        confidence: 'approximate',
+        origin: 'stack-trace',
+      };
+    }
+  }
+  return null;
+}
+
+// --- Plain HTML fallback (guaranteed file, best-effort line) ---------------
+// If nothing above matched, the element most likely came straight from the
+// browser's own HTML parser rather than any JS framework — in which case
+// the "source file" is simply the current page itself, which is always
+// known with certainty. For a best-effort line number, we fetch the page's
+// own original HTML text (cached after the first lookup) and text-search
+// for a substring likely unique to this element.
+
+let cachedHtml: string | null | undefined; // undefined = not fetched yet
+
+async function getDocumentHtml(): Promise<string | null> {
+  if (cachedHtml !== undefined) return cachedHtml;
+  try {
+    const res = await fetch(location.href, { cache: 'force-cache' });
+    cachedHtml = await res.text();
+  } catch {
+    cachedHtml = null;
+  }
+  return cachedHtml;
+}
+
+function buildSignature(el: Element): string | null {
+  if (el.id) return `id="${el.id}"`;
+  for (const attr of ['data-testid', 'name']) {
+    const value = el.getAttribute(attr);
+    if (value) return `${attr}="${value}"`;
+  }
+  if (el.className && typeof el.className === 'string') return `class="${el.className}"`;
+  return null;
+}
+
+async function resolvePlainHtmlSource(el: Element): Promise<SourceLocation> {
+  const file = location.pathname || '/';
+  const html = await getDocumentHtml();
+  if (html) {
+    const signature = buildSignature(el);
+    if (signature) {
+      const idx = html.indexOf(signature);
+      if (idx !== -1) {
+        const line = html.slice(0, idx).split('\n').length;
+        return { file, line, confidence: 'approximate', origin: 'plain-html' };
+      }
+    }
+  }
+  return { file, confidence: 'approximate', origin: 'plain-html' };
+}
+
+// --- Combined, priority-ordered resolution ----------------------------------
+
+/**
+ * Resolves a DOM element back to its best-known source location, trying
+ * each mechanism in order of confidence and stopping at the first hit:
+ *   1. React fiber debug source (exact file+line, when the JSX dev
+ *      transform ran)
+ *   2. Vue component __file (exact file, rarely a line — .vue maps to a
+ *      whole component, not a per-element position)
+ *   3. Deferred creation-time stack trace (approximate; real filenames in
+ *      dev servers, minified locations in production)
+ *   4. The current page's own URL, with a best-effort line number found by
+ *      text-searching the page's original HTML (approximate; always
+ *      produces at least a file)
+ * Never fabricates a guess beyond what one of these mechanisms actually
+ * found — if all four come up empty, the caller gets `null`.
+ */
+export async function resolveSource(el: Element): Promise<SourceLocation | null> {
+  const react = resolveReactSource(el);
+  if (react) return react;
+
+  const vue = resolveVueSource(el);
+  if (vue) return vue;
+
+  const stack = resolveStackTraceSource(el);
+  if (stack) return stack;
+
+  return resolvePlainHtmlSource(el);
+}
+
+/** Best-effort component name — optional by design, `null` is a normal, expected result (plain HTML, Angular without devtools hook, minified React, etc). */
+export function resolveComponentName(el: Element): string | null {
+  return resolveReactComponentName(el) ?? resolveVueComponentName(el) ?? resolveAngularComponentName(el);
+}
