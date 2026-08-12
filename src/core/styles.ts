@@ -88,6 +88,20 @@ export const css = `
   pointer-events: auto;
   animation: apd-fade-in 0.12s ease;
 }
+/* While minimized, the backdrop must not keep covering (and intercepting
+   clicks on) the whole viewport — most importantly, while the Inspector is
+   actively picking, the person needs to click straight through to real
+   page elements. Without this, every click would land on the overlay
+   itself and trigger its own "click outside to close" handler instead of
+   reaching the page, making the picker look like it silently cancels
+   itself on the very first click. */
+.apd-overlay.apd-overlay-passthrough {
+  background: transparent;
+  pointer-events: none;
+}
+.apd-overlay.apd-overlay-passthrough .apd-modal {
+  pointer-events: auto;
+}
 @keyframes apd-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .apd-modal {

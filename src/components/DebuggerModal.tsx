@@ -96,7 +96,7 @@ export function DebuggerModal({
         : 'element picker';
 
   return (
-    <div className="apd-overlay" onClick={onClose}>
+    <div className={classNames('apd-overlay', minimized && 'apd-overlay-passthrough')} onClick={onClose}>
       <div className={`apd-modal${minimized ? ' apd-minimized' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="apd-header">
           <div className="apd-header-title">

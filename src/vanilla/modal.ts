@@ -185,6 +185,7 @@ export function createModal(
   function setMinimized(next: boolean) {
     minimized = next;
     modal.classList.toggle('apd-minimized', minimized);
+    overlay.classList.toggle('apd-overlay-passthrough', minimized);
     minimizeBtn.textContent = minimized ? '▢' : '—';
     tabs.style.display = minimized ? 'none' : '';
     networkToolbar.style.display = minimized || tab !== 'network' ? 'none' : '';
