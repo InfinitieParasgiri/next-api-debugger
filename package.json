@@ -14,7 +14,8 @@
     "dist/next-api-debugger.global.js"
   ],
   "files": [
-    "dist"
+    "dist",
+    "babel-plugin.js"
   ],
   "exports": {
     ".": {
@@ -26,7 +27,8 @@
       "types": "./dist/standalone.d.ts",
       "import": "./dist/standalone.mjs",
       "require": "./dist/standalone.js"
-    }
+    },
+    "./babel-plugin": "./babel-plugin.js"
   },
   "scripts": {
     "build": "tsup",

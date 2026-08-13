@@ -1,6 +1,38 @@
 import { SourceLocation } from '../../types';
 import { getCreationError } from './creationTracker';
 
+/** Attribute name the optional build-time plugin (see babel-plugin.js) injects onto every JSX opening element: `data-apd-source="relative/path.jsx:12:4"`. */
+export const BUILD_SOURCE_ATTR = 'data-apd-source';
+
+// --- Build-time injected attribute (most reliable, opt-in) -----------------
+// If a project has added the companion Babel plugin, every element that
+// came from JSX carries this attribute directly — baked in at build time,
+// so reading it doesn't depend on any framework's runtime internals at all.
+// This sidesteps two real problems the other resolvers run into for React
+// specifically: (1) Next.js's SWC compiler does not reliably attach
+// `_debugSource` in dev even when configured to — a currently open Next.js
+// bug (facebook/react et al. is not the culprit here, Next.js's SWC
+// integration is) — and (2) React renders in two disconnected phases
+// (render, then commit); a stack trace captured when a DOM node is actually
+// created is *only ever* inside React's internal commit-phase machinery,
+// never inside the component function that wrote the JSX, so no amount of
+// smarter frame-parsing can recover the original call site that way. A
+// build-time-injected attribute has neither problem, at the cost of an
+// explicit opt-in (see README) and a small, dev-only HTML attribute.
+function resolveBuildAttributeSource(el: Element): SourceLocation | null {
+  const raw = el.getAttribute(BUILD_SOURCE_ATTR);
+  if (!raw) return null;
+  const match = raw.match(/^(.*):(\d+):(\d+)$/);
+  if (!match) return { file: raw, confidence: 'exact', origin: 'build-plugin' };
+  return {
+    file: match[1],
+    line: Number(match[2]),
+    column: Number(match[3]),
+    confidence: 'exact',
+    origin: 'build-plugin',
+  };
+}
+
 // --- React -------------------------------------------------------------
 // React attaches a Fiber node to the real DOM element under a key like
 // `__reactFiber$<random>` (React 17+) or `__reactInternalInstance$<random>`
@@ -125,12 +157,27 @@ function resolveAngularComponentName(el: Element): string | null {
 
 const STACK_FRAME_RE = /(?:\()?(https?:\/\/[^\s)]+|\/[^\s)]+|[A-Za-z]:\\[^\s)]+):(\d+):(\d+)\)?/;
 
+// Anything under node_modules is vendor/framework code, never the app's own
+// source — regardless of which specific library it is. This is what makes
+// the exclusion general-purpose rather than a maintained list of framework
+// names: React, Vue, a state library, a UI kit, all live in node_modules by
+// convention, so this one check covers all of them. If a stack is *entirely*
+// vendor frames (which is the normal case for any element created by a
+// framework's own reconciler/renderer, since that code path never touches
+// app code at all) this correctly returns null rather than pointing at,
+// say, a react-dom bundle chunk as if it meant something — better to fall
+// through to the guaranteed-but-coarser page-path fallback than show a
+// technically-real but practically-useless location.
+function isVendorFrame(raw: string): boolean {
+  return /next-api-debugger|core\/inspector\/|node_modules/.test(raw);
+}
+
 function resolveStackTraceSource(el: Element): SourceLocation | null {
   const err = getCreationError(el);
   if (!err?.stack) return null;
   const lines = err.stack.split('\n').slice(1);
   for (const raw of lines) {
-    if (/next-api-debugger|core\/inspector\//.test(raw)) continue;
+    if (isVendorFrame(raw)) continue;
     const match = raw.match(STACK_FRAME_RE);
     if (match) {
       return {
@@ -197,19 +244,24 @@ async function resolvePlainHtmlSource(el: Element): Promise<SourceLocation> {
 /**
  * Resolves a DOM element back to its best-known source location, trying
  * each mechanism in order of confidence and stopping at the first hit:
+ *   0. Build-time injected `data-apd-source` attribute (exact file+line,
+ *      opt-in via the companion Babel plugin — see README)
  *   1. React fiber debug source (exact file+line, when the JSX dev
- *      transform ran)
+ *      transform ran — not guaranteed on every toolchain, see above)
  *   2. Vue component __file (exact file, rarely a line — .vue maps to a
  *      whole component, not a per-element position)
  *   3. Deferred creation-time stack trace (approximate; real filenames in
- *      dev servers, minified locations in production)
+ *      dev servers, minified locations in production; never vendor code)
  *   4. The current page's own URL, with a best-effort line number found by
  *      text-searching the page's original HTML (approximate; always
  *      produces at least a file)
  * Never fabricates a guess beyond what one of these mechanisms actually
- * found — if all four come up empty, the caller gets `null`.
+ * found — if all five come up empty, the caller gets `null`.
  */
 export async function resolveSource(el: Element): Promise<SourceLocation | null> {
+  const buildAttr = resolveBuildAttributeSource(el);
+  if (buildAttr) return buildAttr;
+
   const react = resolveReactSource(el);
   if (react) return react;
 

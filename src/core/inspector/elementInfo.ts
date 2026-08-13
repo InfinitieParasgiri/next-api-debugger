@@ -1,5 +1,5 @@
 import { BoxModel, ElementAncestor, ElementInfo } from '../../types';
-import { resolveComponentName, resolveSource } from './resolvers';
+import { resolveComponentName, resolveSource, BUILD_SOURCE_ATTR } from './resolvers';
 
 /** A curated subset of computed styles, roughly matching what devtools' "Computed" panel leads with — not exhaustive (getComputedStyle has ~300 properties), but the ones actually useful for a quick glance. */
 const STYLE_KEYS = [
@@ -72,6 +72,7 @@ export async function buildElementInfo(el: Element): Promise<ElementInfo> {
 
   const attributes: Record<string, string> = {};
   Array.from(el.attributes).forEach((a) => {
+    if (a.name === BUILD_SOURCE_ATTR) return; // already surfaced in the Source card
     attributes[a.name] = a.value;
   });
 

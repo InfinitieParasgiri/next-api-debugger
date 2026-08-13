@@ -90,7 +90,7 @@ export interface ConsoleLogEntry {
 
 // --- Inspector -------------------------------------------------------------
 
-export type SourceOrigin = 'react' | 'vue' | 'stack-trace' | 'plain-html';
+export type SourceOrigin = 'build-plugin' | 'react' | 'vue' | 'stack-trace' | 'plain-html';
 /** 'exact' = a build-time debug attribute told us directly (React __source,
  *  Vue __file). 'approximate' = inferred (stack-trace frame, text-search
  *  against the page's own HTML) — right most of the time, but not certain. */

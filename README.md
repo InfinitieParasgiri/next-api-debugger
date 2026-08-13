@@ -245,50 +245,73 @@ produced this?" using several mechanisms, in priority order — it stops at
 the first one that succeeds, and is honest when none of them do rather than
 guessing:
 
+0. **Build-time injected attribute** (exact file + line + column, opt-in) —
+   see "Getting accurate source locations" below. This is the only
+   mechanism unaffected by the two React-specific problems in #1.
 1. **React fiber debug source** (exact file + line) — if the JSX dev
-   transform ran (true by default for Create React App; version-dependent
-   for Vite+React, since `@vitejs/plugin-react` v6 dropped Babel-by-default
-   for speed), React attaches `_debugSource` to every Fiber purely so React
-   DevTools can do this same "jump to source" trick — we just read it.
+   transform ran. **In practice this is unreliable on current Next.js**:
+   Next.js's SWC compiler does not consistently attach React's
+   `_debugSource` in dev, even when explicitly configured to — a currently
+   open Next.js bug, not something fixable from outside Next.js. Even where
+   it IS attached, it only covers elements React's own reconciler created
+   directly.
 2. **Vue component `__file`** (exact file, rarely a line — a `.vue` file
    maps to one whole component, not a per-element position) — attached by
-   `vue-loader` / `@vitejs/plugin-vue` in dev mode, same idea as above but
-   Vue's own equivalent.
+   `vue-loader` / `@vitejs/plugin-vue` in dev mode; generally reliable,
+   unaffected by the Next.js-specific issue above.
 3. **Deferred creation-time stack trace** (approximate) — a lightweight
    patch on `document.createElement` remembers *where* each element was
-   created (see "Why is element creation tracked?" below), used as a
-   fallback for anything React/Vue didn't already answer. In a dev server
-   (Vite, webpack-dev-server, Angular CLI) this usually resolves to a real,
-   readable file path — those tools deliberately make stack traces
-   human-readable for exactly this kind of debugging. In a minified
-   production build it would point at a bundle location instead.
+   created (see "Why is element creation tracked?" below). Frames inside
+   any `node_modules` package (React, Vue, or anything else) are always
+   filtered out — for elements a framework's own renderer created, this
+   correctly finds nothing rather than pointing at a vendor bundle chunk
+   as if it meant something. It's genuinely useful for plain DOM
+   manipulation that doesn't go through a framework at all.
 4. **The current page's own URL** (guaranteed file, best-effort line) — the
-   last resort for elements that came straight from the browser's HTML
-   parser rather than any JS framework. The file is always known with
-   certainty (it's just the page you're on); the line number is a
-   best-effort text search against the page's own original HTML.
+   last resort. The file is always known with certainty; the line number
+   is a best-effort text search against the page's own original HTML.
 
-Angular gets component name (best-effort, via the Angular DevTools global
-hook when present) but not a source file — no equivalent free runtime
-metadata was found; Angular's own "jump to template" tooling relies on
-IDE-side language-service integration rather than something readable from
-the rendered DOM.
+**Angular** gets component name (best-effort, via the Angular DevTools
+global hook when present) but not a source file — no equivalent free
+runtime metadata was found; Angular's own "jump to template" tooling relies
+on IDE-side language-service integration rather than something readable
+from the rendered DOM.
 
 **Component name is always optional** — `null` is a normal, expected result
 (plain HTML, Angular without the devtools hook active, or a minified React
 production build all have no name to offer), and the Inspector just omits
 it rather than showing something misleading.
 
-**Why is element creation tracked?** So the deferred-stack-trace fallback
-(#3 above) can work for *already-existing* elements, not just ones created
-after you open the Inspector — by the time you click something on screen,
-whatever created it has long since returned, so there's no way to capture
-its stack trace retroactively. The tracking itself is deliberately cheap:
-constructing `new Error()` doesn't unwind or format a stack (that's a lazy
-`.stack` accessor), so the always-on cost is one WeakMap write per element
-creation — the actual expensive part (stringifying and parsing `.stack`)
-only happens if you inspect that specific element. Turn it off entirely
-with `inspector: false`.
+### Getting accurate source locations (recommended for React/Next.js)
+
+Because of the two React-specific problems above — Next.js's SWC compiler
+not reliably attaching debug info, and React's render/commit phase split
+meaning a stack trace can never reach back into your component's own call
+frames — **the only mechanism that reliably gives exact file+line for React
+apps is the optional Babel plugin**. It injects a `data-apd-source`
+attribute directly onto native JSX elements at build time, so the Inspector
+reads it straight off the DOM with no dependency on React's runtime at all.
+
+```js
+// babel.config.js (or .babelrc)
+module.exports = {
+  presets: [/* your existing presets, e.g. 'next/babel' */],
+  plugins: [
+    process.env.NODE_ENV !== 'production' && 'next-api-debugger/babel-plugin',
+  ].filter(Boolean),
+};
+```
+
+**Trade-off worth knowing, specific to Next.js:** adding *any* Babel config
+file switches Next.js off its SWC compiler for the whole app in dev — a
+Next.js behavior, not something this plugin does. You trade some dev-mode
+compile/Fast-Refresh speed for exact, guaranteed-accurate source locations.
+That's why this is opt-in rather than bundled into the default setup — only
+add it if the Inspector's accuracy matters more to you than SWC's speed.
+Skipped entirely for custom components (`<MyComponent>` — only native tags
+like `<div>` get tagged, since a component's props aren't guaranteed to
+reach the actual DOM node) and for production builds if you gate it as
+shown above.
 
 ## Advanced / manual usage
 
@@ -343,6 +366,10 @@ src/
 │   ├── JsonViewer.tsx              same core/jsonHighlight logic, React-flavored
 │   └── ... (FloatingButton, DebuggerModal, RequestList, RequestDetail, ...)
 └── index.ts                      React entry point
+
+babel-plugin.js                   optional, dev-only — see "Getting accurate
+                                    source locations" above. Plain hand-written
+                                    CJS, zero dependencies, not bundled by tsup.
 ```
 
 **Why does this work in any framework?** Everything that actually *does*
