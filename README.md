@@ -255,7 +255,7 @@ export function proxy(request: NextRequest) {
 2. Expose only the current visitor's logs from a Node Route Handler:
 
 ```ts
-// app/api/__apd/logs/route.ts
+// app/api/apd/logs/route.ts
 import { cookies } from 'next/headers';
 import { getServerLogs } from 'next-api-debugger/server';
 
@@ -286,7 +286,7 @@ export async function laravelFetch(input: RequestInfo | URL, init?: RequestInit)
   const sessionId = (await cookies()).get('apd-session')?.value;
   const enabled = process.env.NODE_ENV !== 'production' ||
     process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true';
-  return debugServerFetch(sessionId, input, init, { enabled });
+  return debugServerFetch(sessionId, input, init, { enabled, captureDetails: true });
 }
 
 // In a Server Component or Route Handler, replace the Laravel fetch call:
@@ -298,7 +298,7 @@ export async function laravelFetch(input: RequestInfo | URL, init?: RequestInit)
 ```tsx
 <ApiDebugger
   enabled={process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true'}
-  serverLogsUrl="/api/__apd/logs"
+  serverLogsUrl="/api/apd/logs"
 />
 ```
 
@@ -307,10 +307,15 @@ For a PM2 production build, set `NEXT_PUBLIC_API_DEBUGGER_ENABLED=true` at
 it unset to retain the default development-only behavior. Enable this only
 where access to the debugger is appropriate for your app.
 
-Server entries are marked `server-fetch` in the Network list. They contain
-URL, method, status, and duration; request/response headers and bodies are
-deliberately excluded, and query values are redacted. The wrapper returns the
-original `Response` and rethrows the original error. Recording is disabled
+Server entries are marked `server-fetch` in the Network list. By default they
+contain URL, method, status, and duration; query values, headers, and bodies
+are omitted or redacted. Set `captureDetails: true` only on public API calls
+to show query values, safe-listed headers, and up to 32 KB of text or JSON
+request/response body. Fields named like tokens, passwords, cookies, and
+secrets are redacted in JSON; binary bodies are skipped. Review the public
+response data before enabling this option because its contents become visible
+in the visitor's debugger panel. The wrapper returns the original `Response`
+and rethrows the original error. Recording is disabled
 in production by default. Only calls routed through `debugServerFetch` are captured;
 server-side axios calls need their own integration. The in-memory bridge is
 per Node process, so a multi-process or serverless deployment needs a shared
@@ -423,6 +428,9 @@ on the developer's computer** to make the displayed path clickable in VS Code:
 <ApiDebugger editorProjectRoot="/Users/you/projects/my-next-app" />
 ```
 
+The Inspector source location and source labels in its Element Tree open that
+file and line in VS Code. The browser may ask you to allow the `vscode://` link.
+
 If Next.js runs on a remote Node server, use the path on the developer's
 computer, not the server's deployment path. Rebuild the Next.js app after
 enabling the plugin; already-built HTML cannot gain source attributes later.
@@ -443,6 +451,8 @@ the debugger is explicitly enabled there.
 Selecting an element also builds a tree of everything underneath it —
 tag/component, classes, attributes, and source location per node, exactly
 like the top-level element gets, but for the whole subtree at once. Each
+tree source path opens in VS Code when `editorProjectRoot` is set and a real
+source file was resolved. Clicking the path leaves the tree expanded. Each
 node also gets a data-source badge:
 
 - **API** — this element's own text (or a `src`/`href`/`alt`/`value`/

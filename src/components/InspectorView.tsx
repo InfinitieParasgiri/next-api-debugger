@@ -269,7 +269,7 @@ export function InspectorView({ onInspectingChange, editorProjectRoot }: Inspect
             </span>
           </div>
           <div className="apd-section-body">
-            <ElementTreeView root={tree} />
+            <ElementTreeView root={tree} editorProjectRoot={editorProjectRoot} />
           </div>
         </div>
       )}

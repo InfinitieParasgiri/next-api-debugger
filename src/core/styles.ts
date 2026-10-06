@@ -695,6 +695,8 @@ export const css = `
   text-overflow: ellipsis;
   font-size: 10.5px;
 }
+.apd-tree-source-link { cursor: pointer; text-decoration: none; }
+.apd-tree-source-link:hover { color: var(--apd-accent); text-decoration: underline; }
 .apd-tree-truncated {
   color: var(--apd-text-faint);
   font-size: 10.5px;

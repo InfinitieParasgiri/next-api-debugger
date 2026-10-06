@@ -127,7 +127,7 @@ function tagLabel(node: ElementTreeNode): HTMLElement {
  * still walking down the ancestor chain, 0 at the selected element itself,
  * incrementing for each level of its own descendants.
  */
-function treeNodeRow(node: ElementTreeNode, prefix: string, connector: string, depthFromSelected: number): HTMLElement {
+function treeNodeRow(node: ElementTreeNode, prefix: string, connector: string, depthFromSelected: number, editorProjectRoot?: string): HTMLElement {
   const hasChildren = node.children.length > 0;
   let open = !!node.isSelected || !!node.isAncestorPath || depthFromSelected < DEFAULT_EXPAND_DEPTH;
 
@@ -137,6 +137,12 @@ function treeNodeRow(node: ElementTreeNode, prefix: string, connector: string, d
 
   const rowClass =
     (hasChildren ? 'apd-tree-row apd-tree-clickable' : 'apd-tree-row') + (node.isSelected ? ' apd-tree-selected-row' : '');
+  const sourceHref = node.source ? editorLink(node.source, editorProjectRoot) : null;
+  const sourceLabel = node.source ? `${node.source.file}${node.source.line ? `:${node.source.line}` : ''}` : '';
+  const sourceElement = sourceHref
+    ? el('a', { class: 'apd-tree-source apd-tree-source-link', href: sourceHref, title: 'Open in VS Code' }, [sourceLabel])
+    : node.source ? el('span', { class: 'apd-tree-source' }, [sourceLabel]) : null;
+  if (sourceHref) sourceElement?.addEventListener('click', (event) => event.stopPropagation());
   const row = el('div', { class: rowClass }, [
     el('span', { class: 'apd-tree-prefix' }, [prefix + connector]),
     toggle,
@@ -144,9 +150,7 @@ function treeNodeRow(node: ElementTreeNode, prefix: string, connector: string, d
     node.isSelected ? el('span', { class: 'apd-tree-selected-label' }, ['← Selected']) : null,
     node.componentName ? el('span', { class: 'apd-tree-component' }, [node.componentName]) : null,
     dataSourceBadge(node.dataSource),
-    node.source
-      ? el('span', { class: 'apd-tree-source' }, [`${node.source.file}${node.source.line ? `:${node.source.line}` : ''}`])
-      : null,
+    sourceElement,
   ]);
 
   const wrap = el('div', { class: 'apd-tree-node' }, [row]);
@@ -158,7 +162,7 @@ function treeNodeRow(node: ElementTreeNode, prefix: string, connector: string, d
   if (hasChildren) {
     childrenWrap = el('div', {}, [
       ...node.children.map((child, i) =>
-        treeNodeRow(child, childPrefix, i === node.children.length - 1 ? '└── ' : '├── ', childDepthFromSelected)
+        treeNodeRow(child, childPrefix, i === node.children.length - 1 ? '└── ' : '├── ', childDepthFromSelected, editorProjectRoot)
       ),
       typeof node.truncatedChildCount === 'number'
         ? el('div', { class: 'apd-tree-truncated' }, [`${childPrefix}+${node.truncatedChildCount} more not shown`])
@@ -177,8 +181,8 @@ function treeNodeRow(node: ElementTreeNode, prefix: string, connector: string, d
   return wrap;
 }
 
-function elementTreeView(root: ElementTreeNode): HTMLElement {
-  return el('div', { class: 'apd-tree' }, [treeNodeRow(root, '', '', -1)]);
+function elementTreeView(root: ElementTreeNode, editorProjectRoot?: string): HTMLElement {
+  return el('div', { class: 'apd-tree' }, [treeNodeRow(root, '', '', -1, editorProjectRoot)]);
 }
 
 function section(title: string, body: HTMLElement): HTMLElement {
@@ -303,7 +307,7 @@ export function createInspectorView(onInspectingChange: (active: boolean) => voi
         [' — structure, source, and data origin for this element and its descendants']
       ),
     ]);
-    root.appendChild(el('div', { class: 'apd-section' }, [treeHeader, el('div', { class: 'apd-section-body' }, [elementTreeView(tree)])]));
+    root.appendChild(el('div', { class: 'apd-section' }, [treeHeader, el('div', { class: 'apd-section-body' }, [elementTreeView(tree, editorProjectRoot)])]));
   }
 
   renderEmpty(false, 'Pick any element on the page to see its DOM details, computed styles, and — when available — the exact source file responsible for it.');

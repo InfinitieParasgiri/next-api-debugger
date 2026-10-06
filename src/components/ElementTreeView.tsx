@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DataSourceInfo, ElementTreeNode } from '../types';
+import { editorLink } from '../core/inspector/editorLink';
 
 // How many levels of the SELECTED element's own descendants auto-expand by
 // default. Deliberately tracked relative to the selected element, not the
@@ -44,6 +45,7 @@ function TagLabel({ node }: { node: ElementTreeNode }) {
 
 interface TreeNodeRowProps {
   node: ElementTreeNode;
+  editorProjectRoot?: string;
   /** Everything already drawn to the left of this node's own connector — accumulated "│   " / "    " segments from every ancestor branch above it. */
   prefix: string;
   /** This node's own connector glyph: '├── ', '└── ', or '' only for the very top of the whole tree. */
@@ -52,12 +54,16 @@ interface TreeNodeRowProps {
   depthFromSelected: number;
 }
 
-function TreeNodeRow({ node, prefix, connector, depthFromSelected }: TreeNodeRowProps) {
+function TreeNodeRow({ node, editorProjectRoot, prefix, connector, depthFromSelected }: TreeNodeRowProps) {
   const [open, setOpen] = useState(node.isSelected || node.isAncestorPath || depthFromSelected < DEFAULT_EXPAND_DEPTH);
   const hasChildren = node.children.length > 0;
 
   const childPrefix = prefix + (connector === '' ? '' : connector === '└── ' ? '    ' : '│   ');
   const childDepthFromSelected = node.isSelected ? 0 : depthFromSelected < 0 ? -1 : depthFromSelected + 1;
+  const sourceHref = node.source ? editorLink(node.source, editorProjectRoot) : null;
+  const sourceLabel = node.source
+    ? `${node.source.file}${node.source.line ? `:${node.source.line}` : ''}`
+    : '';
 
   return (
     <div className="apd-tree-node">
@@ -82,12 +88,13 @@ function TreeNodeRow({ node, prefix, connector, depthFromSelected }: TreeNodeRow
         {node.isSelected && <span className="apd-tree-selected-label">← Selected</span>}
         {node.componentName && <span className="apd-tree-component">{node.componentName}</span>}
         <DataSourceBadge info={node.dataSource} />
-        {node.source && (
-          <span className="apd-tree-source">
-            {node.source.file}
-            {node.source.line ? `:${node.source.line}` : ''}
-          </span>
-        )}
+        {sourceHref ? (
+          <a className="apd-tree-source apd-tree-source-link" href={sourceHref} title="Open in VS Code" onClick={(event) => event.stopPropagation()}>
+            {sourceLabel}
+          </a>
+        ) : node.source ? (
+          <span className="apd-tree-source">{sourceLabel}</span>
+        ) : null}
       </div>
       {open && hasChildren && (
         <div>
@@ -97,6 +104,7 @@ function TreeNodeRow({ node, prefix, connector, depthFromSelected }: TreeNodeRow
               <TreeNodeRow
                 key={i}
                 node={child}
+                editorProjectRoot={editorProjectRoot}
                 prefix={childPrefix}
                 connector={isLast ? '└── ' : '├── '}
                 depthFromSelected={childDepthFromSelected}
@@ -114,10 +122,10 @@ function TreeNodeRow({ node, prefix, connector, depthFromSelected }: TreeNodeRow
   );
 }
 
-export function ElementTreeView({ root }: { root: ElementTreeNode }) {
+export function ElementTreeView({ root, editorProjectRoot }: { root: ElementTreeNode; editorProjectRoot?: string }) {
   return (
     <div className="apd-tree">
-      <TreeNodeRow node={root} prefix="" connector="" depthFromSelected={-1} />
+      <TreeNodeRow node={root} editorProjectRoot={editorProjectRoot} prefix="" connector="" depthFromSelected={-1} />
     </div>
   );
 }
