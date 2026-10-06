@@ -1,8 +1,11 @@
-import { ElementInfo } from '../types';
+import { ElementInfo, ElementTreeNode, DataSourceInfo } from '../types';
 import { buildElementInfo } from '../core/inspector/elementInfo';
+import { buildElementTree } from '../core/inspector/tree';
+import { logStore } from '../core/logStore';
 import { startPicking, PickController } from '../core/inspector/pick';
 import { createHighlightBox, HighlightBox } from '../core/inspector/highlight';
 import { copyToClipboard } from '../core/utils';
+import { editorLink } from '../core/inspector/editorLink';
 import { el, clear } from './dom';
 
 export interface InspectorViewWidget {
@@ -44,28 +47,25 @@ function boxModelDiagram(info: ElementInfo): HTMLElement {
 function sourceCard(info: ElementInfo, editorProjectRoot?: string): HTMLElement {
   const { source, componentName } = info;
   if (!source) {
-    return el('div', { class: 'apd-source-card' }, [
-      el('div', { class: 'apd-source-none' }, ['Source location unavailable for this element.']),
-    ]);
+    const card = el('div', { class: 'apd-source-card' });
+    if (componentName) card.appendChild(el('div', {}, ['Component: ', el('strong', {}, [componentName])]));
+    card.appendChild(el('div', { class: 'apd-source-none' }, ['Source file unavailable. For React/Next.js, enable the Babel source plugin for exact JSX paths.']));
+    return card;
   }
 
-  const label = source.line ? `${source.file}:${source.line}${source.column ? `:${source.column}` : ''}` : source.file;
-  const canOpen = !!editorProjectRoot;
-  const href = canOpen
-    ? `vscode://file/${editorProjectRoot!.replace(/\/$/, '')}/${source.file.replace(/^\//, '')}${
-        source.line ? `:${source.line}:${source.column ?? 1}` : ''
-      }`
-    : undefined;
+  const location = source.line ? `${source.file}:${source.line}${source.column ? `:${source.column}` : ''}` : source.file;
+  const label = source.origin === 'plain-html' ? `Rendered page: ${location}` : location;
+  const href = editorLink(source, editorProjectRoot);
 
-  const pathEl = canOpen
-    ? el('a', { class: 'apd-source-path', href: href!, title: 'Open in VS Code' }, [label])
+  const pathEl = href
+    ? el('a', { class: 'apd-source-path', href, title: 'Open in VS Code' }, [label])
     : el('span', { class: 'apd-source-path apd-source-path-plain' }, [label]);
 
   const meta = el('div', { class: 'apd-source-meta' }, [
     el('span', { class: `apd-confidence-badge apd-confidence-${source.confidence}` }, [source.confidence]),
     el('span', {}, [`via ${source.origin}`]),
   ]);
-  if (!canOpen) {
+  if (!href && source.origin !== 'plain-html') {
     const copyBtn = el('button', { type: 'button', class: 'apd-console-toggle-stack', style: 'margin-left:auto' }, [
       'Copy path',
     ]);
@@ -85,6 +85,100 @@ function sourceCard(info: ElementInfo, editorProjectRoot?: string): HTMLElement 
   card.appendChild(pathEl);
   card.appendChild(meta);
   return card;
+}
+
+// How many levels of the SELECTED element's own descendants auto-expand by
+// default, tracked relative to the selected element (not the tree's
+// absolute depth) — see the matching comment in ElementTreeView.tsx.
+const DEFAULT_EXPAND_DEPTH = 3;
+
+function dataSourceBadge(info: DataSourceInfo): HTMLElement | null {
+  if (info.kind === 'unknown') return null;
+  if (info.kind === 'api') {
+    return el(
+      'span',
+      { class: 'apd-datasource-badge apd-datasource-api', title: `Matches a value from a captured response: ${info.method} ${info.endpoint}` },
+      ['API']
+    );
+  }
+  return el(
+    'span',
+    {
+      class: 'apd-datasource-badge apd-datasource-static',
+      title: 'No matching value found in any captured API response this session — may be hardcoded, or fetched server-side before the page loaded',
+    },
+    ['STATIC']
+  );
+}
+
+function tagLabel(node: ElementTreeNode): HTMLElement {
+  const parts: (string | HTMLElement)[] = [`<${node.tag}`];
+  if (node.id) parts.push(el('span', { class: 'apd-tree-id' }, [` id="${node.id}"`]));
+  if (node.classes.length > 0) parts.push(el('span', { class: 'apd-tree-class' }, [` class="${node.classes.join(' ')}"`]));
+  parts.push('>');
+  return el('span', { class: node.isSelected ? 'apd-tree-tag apd-tree-selected-tag' : 'apd-tree-tag' }, parts);
+}
+
+/**
+ * `prefix`: everything already drawn to the left of this node's own
+ * connector — the accumulated "│   " / "    " segments from every ancestor
+ * branch above it. `connector`: this node's own glyph ('├── ', '└── ', or
+ * '' only at the very top of the whole tree). `depthFromSelected`: -1 while
+ * still walking down the ancestor chain, 0 at the selected element itself,
+ * incrementing for each level of its own descendants.
+ */
+function treeNodeRow(node: ElementTreeNode, prefix: string, connector: string, depthFromSelected: number): HTMLElement {
+  const hasChildren = node.children.length > 0;
+  let open = !!node.isSelected || !!node.isAncestorPath || depthFromSelected < DEFAULT_EXPAND_DEPTH;
+
+  const toggle = el('span', { class: hasChildren ? 'apd-tree-toggle' : 'apd-tree-toggle apd-tree-toggle-leaf' }, [
+    hasChildren ? (open ? '▾' : '▸') : '•',
+  ]);
+
+  const rowClass =
+    (hasChildren ? 'apd-tree-row apd-tree-clickable' : 'apd-tree-row') + (node.isSelected ? ' apd-tree-selected-row' : '');
+  const row = el('div', { class: rowClass }, [
+    el('span', { class: 'apd-tree-prefix' }, [prefix + connector]),
+    toggle,
+    tagLabel(node),
+    node.isSelected ? el('span', { class: 'apd-tree-selected-label' }, ['← Selected']) : null,
+    node.componentName ? el('span', { class: 'apd-tree-component' }, [node.componentName]) : null,
+    dataSourceBadge(node.dataSource),
+    node.source
+      ? el('span', { class: 'apd-tree-source' }, [`${node.source.file}${node.source.line ? `:${node.source.line}` : ''}`])
+      : null,
+  ]);
+
+  const wrap = el('div', { class: 'apd-tree-node' }, [row]);
+
+  const childPrefix = prefix + (connector === '' ? '' : connector === '└── ' ? '    ' : '│   ');
+  const childDepthFromSelected = node.isSelected ? 0 : depthFromSelected < 0 ? -1 : depthFromSelected + 1;
+
+  let childrenWrap: HTMLElement | null = null;
+  if (hasChildren) {
+    childrenWrap = el('div', {}, [
+      ...node.children.map((child, i) =>
+        treeNodeRow(child, childPrefix, i === node.children.length - 1 ? '└── ' : '├── ', childDepthFromSelected)
+      ),
+      typeof node.truncatedChildCount === 'number'
+        ? el('div', { class: 'apd-tree-truncated' }, [`${childPrefix}+${node.truncatedChildCount} more not shown`])
+        : null,
+    ]);
+    childrenWrap.style.display = open ? '' : 'none';
+    wrap.appendChild(childrenWrap);
+
+    row.addEventListener('click', () => {
+      open = !open;
+      toggle.textContent = open ? '▾' : '▸';
+      childrenWrap!.style.display = open ? '' : 'none';
+    });
+  }
+
+  return wrap;
+}
+
+function elementTreeView(root: ElementTreeNode): HTMLElement {
+  return el('div', { class: 'apd-tree' }, [treeNodeRow(root, '', '', -1)]);
 }
 
 function section(title: string, body: HTMLElement): HTMLElement {
@@ -132,7 +226,8 @@ export function createInspectorView(onInspectingChange: (active: boolean) => voi
         onInspectingChange(false);
         renderEmpty(false, 'Resolving source location…');
         const info = await buildElementInfo(target);
-        renderInfo(info);
+        const tree = buildElementTree(target, logStore.getLogs());
+        renderInfo(info, tree);
       },
       (target) => {
         if (target) box.show(target.getBoundingClientRect());
@@ -150,7 +245,7 @@ export function createInspectorView(onInspectingChange: (active: boolean) => voi
     controller?.cancel();
   }
 
-  function renderInfo(info: ElementInfo) {
+  function renderInfo(info: ElementInfo, tree: ElementTreeNode) {
     clear(root);
     root.className = '';
     root.classList.add('apd-inspector-body');
@@ -199,6 +294,16 @@ export function createInspectorView(onInspectingChange: (active: boolean) => voi
     root.appendChild(section('Box Model', boxModelDiagram(info)));
     root.appendChild(section(`Attributes (${Object.keys(info.attributes).length})`, kvRows(info.attributes)));
     root.appendChild(section('Computed Styles', kvRows(info.computedStyles)));
+
+    const treeHeader = el('div', { class: 'apd-section-header' }, [
+      'Element Tree',
+      el(
+        'span',
+        { style: 'font-weight:400;color:var(--apd-text-faint);font-size:10.5px' },
+        [' — structure, source, and data origin for this element and its descendants']
+      ),
+    ]);
+    root.appendChild(el('div', { class: 'apd-section' }, [treeHeader, el('div', { class: 'apd-section-body' }, [elementTreeView(tree)])]));
   }
 
   renderEmpty(false, 'Pick any element on the page to see its DOM details, computed styles, and — when available — the exact source file responsible for it.');

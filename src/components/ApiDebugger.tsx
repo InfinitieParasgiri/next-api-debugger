@@ -7,6 +7,7 @@ import { installXhrInterceptor, uninstallXhrInterceptor } from '../core/intercep
 import { installAxiosInterceptor } from '../core/interceptors/axiosInterceptor';
 import { installConsoleInterceptor, uninstallConsoleInterceptor } from '../core/interceptors/consoleInterceptor';
 import { installCreationTracker, uninstallCreationTracker } from '../core/inspector/creationTracker';
+import { subscribeServerLogs } from '../core/serverLogClient';
 import { useApiLogs } from '../hooks/useApiLogs';
 import { useConsoleLogs } from '../hooks/useConsoleLogs';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
@@ -37,6 +38,7 @@ export function ApiDebugger(props: ApiDebuggerProps) {
     theme: themeProp = 'dark',
     keyboardShortcut = true,
     ignoreUrls,
+    serverLogsUrl,
     inspector = true,
     editorProjectRoot,
   } = props;
@@ -52,7 +54,7 @@ export function ApiDebugger(props: ApiDebuggerProps) {
     if (!isEnabled || typeof window === 'undefined') return;
     logStore.setMaxLogs(maxLogs);
     consoleStore.setMaxEntries(500);
-    installFetchInterceptor({ ignoreUrls });
+    installFetchInterceptor({ ignoreUrls: serverLogsUrl ? [...(ignoreUrls ?? []), serverLogsUrl] : ignoreUrls });
     installXhrInterceptor({ ignoreUrls });
     installConsoleInterceptor();
     if (inspector) installCreationTracker();
@@ -65,7 +67,12 @@ export function ApiDebugger(props: ApiDebuggerProps) {
       uninstallAxios();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEnabled, inspector]);
+  }, [isEnabled, inspector, serverLogsUrl]);
+
+  useEffect(() => {
+    if (!isEnabled || !serverLogsUrl || typeof window === 'undefined') return;
+    return subscribeServerLogs(serverLogsUrl);
+  }, [isEnabled, serverLogsUrl]);
 
   useKeyboardShortcut({ ctrl: true, shift: true, key: 'd' }, () => setOpen((o) => !o), isEnabled && keyboardShortcut);
 

@@ -9,10 +9,9 @@ export const BUILD_SOURCE_ATTR = 'data-apd-source';
 // came from JSX carries this attribute directly — baked in at build time,
 // so reading it doesn't depend on any framework's runtime internals at all.
 // This sidesteps two real problems the other resolvers run into for React
-// specifically: (1) Next.js's SWC compiler does not reliably attach
-// `_debugSource` in dev even when configured to — a currently open Next.js
-// bug (facebook/react et al. is not the culprit here, Next.js's SWC
-// integration is) — and (2) React renders in two disconnected phases
+// specifically: (1) React 19 removed `_debugSource`, so current Next.js
+// builds cannot reliably expose the JSX location through Fiber, and
+// (2) React renders in two disconnected phases
 // (render, then commit); a stack trace captured when a DOM node is actually
 // created is *only ever* inside React's internal commit-phase machinery,
 // never inside the component function that wrote the JSX, so no amount of
@@ -192,11 +191,11 @@ function resolveStackTraceSource(el: Element): SourceLocation | null {
   return null;
 }
 
-// --- Plain HTML fallback (guaranteed file, best-effort line) ---------------
+// --- Rendered HTML fallback (page URL, best-effort HTML line) --------------
 // If nothing above matched, the element most likely came straight from the
 // browser's own HTML parser rather than any JS framework — in which case
-// the "source file" is simply the current page itself, which is always
-// known with certainty. For a best-effort line number, we fetch the page's
+// the current page URL is known, but is not necessarily a source file.
+// For a best-effort HTML line number, we fetch the page's
 // own original HTML text (cached after the first lookup) and text-search
 // for a substring likely unique to this element.
 
@@ -242,6 +241,27 @@ async function resolvePlainHtmlSource(el: Element): Promise<SourceLocation> {
 // --- Combined, priority-ordered resolution ----------------------------------
 
 /**
+ * The synchronous subset of resolution: everything except the plain-HTML
+ * fallback, which needs a `fetch()` of the page's own HTML. Used by the
+ * element-tree builder (see tree.ts) so resolving source locations for a
+ * whole subtree of potentially many nodes doesn't mean firing off that many
+ * network requests — it only ever needs at most one, cached, and only for
+ * the single top-level selected element (see resolveSource below).
+ */
+export function resolveSourceSync(el: Element): SourceLocation | null {
+  const buildAttr = resolveBuildAttributeSource(el);
+  if (buildAttr) return buildAttr;
+
+  const react = resolveReactSource(el);
+  if (react) return react;
+
+  const vue = resolveVueSource(el);
+  if (vue) return vue;
+
+  return resolveStackTraceSource(el);
+}
+
+/**
  * Resolves a DOM element back to its best-known source location, trying
  * each mechanism in order of confidence and stopping at the first hit:
  *   0. Build-time injected `data-apd-source` attribute (exact file+line,
@@ -252,24 +272,18 @@ async function resolvePlainHtmlSource(el: Element): Promise<SourceLocation> {
  *      whole component, not a per-element position)
  *   3. Deferred creation-time stack trace (approximate; real filenames in
  *      dev servers, minified locations in production; never vendor code)
- *   4. The current page's own URL, with a best-effort line number found by
- *      text-searching the page's original HTML (approximate; always
- *      produces at least a file)
+ *   4. For non-React elements, the current page URL with a best-effort
+ *      HTML line found by text-searching the rendered page
  * Never fabricates a guess beyond what one of these mechanisms actually
  * found — if all five come up empty, the caller gets `null`.
  */
 export async function resolveSource(el: Element): Promise<SourceLocation | null> {
-  const buildAttr = resolveBuildAttributeSource(el);
-  if (buildAttr) return buildAttr;
+  const sync = resolveSourceSync(el);
+  if (sync) return sync;
 
-  const react = resolveReactSource(el);
-  if (react) return react;
-
-  const vue = resolveVueSource(el);
-  if (vue) return vue;
-
-  const stack = resolveStackTraceSource(el);
-  if (stack) return stack;
+  // Server-rendered React elements are present in the page HTML, but the
+  // page URL and its line number are not the JSX file that created them.
+  if (getReactFiber(el as any)) return null;
 
   return resolvePlainHtmlSource(el);
 }

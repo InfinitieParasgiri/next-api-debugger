@@ -27,6 +27,17 @@ export default defineConfig([
     external: ['axios'],
     outDir: 'dist',
   },
+  // Node-only capture helper. Never import this entry in a client component.
+  {
+    entry: { server: 'src/server.ts' },
+    format: ['cjs', 'esm'],
+    dts: true,
+    splitting: false,
+    sourcemap: true,
+    minify: true,
+    platform: 'node',
+    outDir: 'dist',
+  },
   // Zero-dependency global script for plain <script> tag use (Vue, Angular,
   // Laravel Blade, plain HTML, or anywhere else). No bundler, no import
   // statement, no build step required on the consuming page.
@@ -45,4 +56,3 @@ export default defineConfig([
     noExternal: [/.*/],
   },
 ]);
-

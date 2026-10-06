@@ -632,6 +632,87 @@ export const css = `
 .apd-box-label-bottom { bottom: 1px; left: 50%; transform: translateX(-50%); }
 .apd-box-label-left { left: 3px; top: 50%; transform: translateY(-50%); }
 
+.apd-tree {
+  border: 1px solid var(--apd-border);
+  border-radius: 8px;
+  background: var(--apd-panel-alt);
+  padding: 8px 6px;
+  font-family: var(--apd-mono);
+  font-size: 12px;
+  max-height: 460px;
+  overflow: auto;
+}
+.apd-tree-node { }
+.apd-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: default;
+  white-space: nowrap;
+}
+.apd-tree-row.apd-tree-clickable { cursor: pointer; }
+.apd-tree-row.apd-tree-clickable:hover { background: var(--apd-panel); }
+.apd-tree-row.apd-tree-selected-row {
+  background: rgba(34,211,238,0.12);
+  outline: 1px solid var(--apd-accent);
+}
+.apd-tree-prefix {
+  color: var(--apd-text-faint);
+  white-space: pre;
+  flex-shrink: 0;
+}
+.apd-tree-toggle {
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--apd-text-faint);
+  text-align: center;
+  font-size: 9px;
+}
+.apd-tree-toggle-leaf { color: var(--apd-text-faint); opacity: 0.5; }
+.apd-tree-tag { color: var(--apd-text); flex-shrink: 0; }
+.apd-tree-tag.apd-tree-selected-tag { color: var(--apd-accent); font-weight: 700; }
+.apd-tree-tag .apd-tree-class { color: #86efac; }
+.apd-tree-tag .apd-tree-id { color: var(--apd-warn); }
+.apd-tree-selected-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--apd-accent);
+  flex-shrink: 0;
+}
+.apd-tree-component {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(34,211,238,0.15);
+  color: var(--apd-accent);
+  flex-shrink: 0;
+}
+.apd-tree-source {
+  color: var(--apd-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+}
+.apd-tree-truncated {
+  color: var(--apd-text-faint);
+  font-size: 10.5px;
+  padding: 2px 4px;
+  font-style: italic;
+}
+
+.apd-datasource-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+.apd-datasource-api { background: rgba(52,211,153,0.18); color: var(--apd-success); }
+.apd-datasource-static { background: rgba(139,147,163,0.15); color: var(--apd-text-dim); }
+
 .apd-footer {
   display: flex;
   align-items: center;

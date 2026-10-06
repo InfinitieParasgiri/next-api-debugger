@@ -11,10 +11,8 @@ const path = require('path');
  * runtime internals.
  *
  * That dependency is worth avoiding on two counts:
- *   1. Next.js's SWC compiler does not reliably attach React's own
- *      `_debugSource` debug info in dev, even when explicitly configured
- *      to (a currently open Next.js issue, not something fixable from
- *      outside Next.js itself).
+ *   1. React 19 removed `_debugSource`; runtime fiber metadata does not
+ *      reliably identify the JSX file in current Next.js apps.
  *   2. Even where `_debugSource` IS attached, React renders in two
  *      disconnected phases — render (where your component runs) and commit
  *      (where DOM nodes actually get created) — so a stack trace captured
@@ -28,15 +26,15 @@ const path = require('path');
  *   module.exports = {
  *     presets: [...your existing presets],
  *     plugins: [
- *       process.env.NODE_ENV !== 'production' && 'next-api-debugger/babel-plugin',
+ *       (process.env.NODE_ENV !== 'production' ||
+ *         process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true') &&
+ *         'next-api-debugger/babel-plugin',
  *     ].filter(Boolean),
  *   };
  *
- * Note for Next.js specifically: adding *any* Babel config file switches
- * Next.js off its SWC compiler for the whole app (a Next.js behavior, not
- * this plugin's doing) — trading some dev-mode compile speed for guaranteed
- * accurate source locations in the Inspector. That trade-off is why this
- * lives as an opt-in plugin rather than something enabled by default.
+ * With webpack, a Babel config switches Next.js app JavaScript compilation
+ * from SWC to Babel. Next.js 16 Turbopack supports Babel configs directly.
+ * Keep the plugin opt-in, since it changes the consuming app's build setup.
  */
 module.exports = function apiDebuggerSourcePlugin({ types: t }) {
   return {

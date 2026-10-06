@@ -34,7 +34,13 @@ dev-only by default.
   hover to highlight, click to select — shows the box model, computed
   styles, attributes, DOM hierarchy, and (best-effort, in priority order)
   the actual **source file**, line/column, and component name responsible
-  for that element. See "How source mapping works" below.
+  for that element. See "How source mapping works" below. Also builds a
+  full **Element Tree**: one continuous connector-line view from `<body>`
+  down through every ancestor to the selected element (clearly marked) and
+  all of its descendants — each node tagged with its own classes, source
+  location (when resolvable), and whether its content matches something
+  from a **captured API response** vs appears to be static/hardcoded.
+  Expandable/collapsible per node.
 - Expand/collapse sections, syntax-highlighted JSON (no external highlighter dep)
 - Export all logs as **JSON** or **HAR**
 - Pin favorite requests, dark/light theme, minimize/maximize
@@ -201,6 +207,115 @@ Pass your axios instance so its requests are captured too:
 initApiDebugger({ axiosInstance: api });
 ```
 
+### Next.js Node server requests
+
+The normal debugger captures browser `fetch`, XHR, and axios calls. Requests
+made by a Next.js Server Component, Server Function, or Route Handler run in
+Node and cannot be seen by the browser interceptor. For a Next.js App Router
+project on a persistent Node server, use the optional server entry and a
+same-origin log route. This also captures requests made during the first page
+render, before the debugger mounts in the browser.
+If installing this package from a local checkout, run `npm run build` here
+first so the new `dist/server` entry exists in the installed package.
+
+1. Give each browser a private debug session cookie. In Next.js 16, add
+   `proxy.ts` at the project root (use `middleware.ts` and export `middleware`
+   on older Next.js versions). If you already have a proxy or middleware,
+   merge the cookie handling into it.
+
+```ts
+// proxy.ts (Next.js 16)
+import { NextResponse, type NextRequest } from 'next/server';
+
+export function proxy(request: NextRequest) {
+  const enabled = process.env.NODE_ENV !== 'production' ||
+    process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true';
+  if (!enabled) return NextResponse.next();
+
+  let sessionId = request.cookies.get('apd-session')?.value;
+  let created = false;
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    request.cookies.set('apd-session', sessionId);
+    created = true;
+  }
+
+  const response = NextResponse.next({ request: { headers: request.headers } });
+  if (created) {
+    response.cookies.set('apd-session', sessionId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+    });
+  }
+  return response;
+}
+```
+
+2. Expose only the current visitor's logs from a Node Route Handler:
+
+```ts
+// app/api/__apd/logs/route.ts
+import { cookies } from 'next/headers';
+import { getServerLogs } from 'next-api-debugger/server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export async function GET() {
+  const enabled = process.env.NODE_ENV !== 'production' ||
+    process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true';
+  if (!enabled) return new Response(null, { status: 404 });
+  const sessionId = (await cookies()).get('apd-session')?.value;
+  return Response.json(getServerLogs(sessionId, { enabled }), {
+    headers: { 'Cache-Control': 'private, no-store' },
+  });
+}
+```
+
+3. Wrap the **server-side** `fetch` used for Laravel calls. Keep the same URL,
+   options, and response handling that your app already uses:
+
+```ts
+// lib/laravel.ts — server-only module
+import 'server-only';
+import { cookies } from 'next/headers';
+import { debugServerFetch } from 'next-api-debugger/server';
+
+export async function laravelFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const sessionId = (await cookies()).get('apd-session')?.value;
+  const enabled = process.env.NODE_ENV !== 'production' ||
+    process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true';
+  return debugServerFetch(sessionId, input, init, { enabled });
+}
+
+// In a Server Component or Route Handler, replace the Laravel fetch call:
+// const response = await laravelFetch(new URL('/api/news', process.env.LARAVEL_API_URL));
+```
+
+4. Point the browser panel at the route:
+
+```tsx
+<ApiDebugger
+  enabled={process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true'}
+  serverLogsUrl="/api/__apd/logs"
+/>
+```
+
+For a PM2 production build, set `NEXT_PUBLIC_API_DEBUGGER_ENABLED=true` at
+**build time** and on the Node server, then rebuild and restart Next.js. Leave
+it unset to retain the default development-only behavior. Enable this only
+where access to the debugger is appropriate for your app.
+
+Server entries are marked `server-fetch` in the Network list. They contain
+URL, method, status, and duration; request/response headers and bodies are
+deliberately excluded, and query values are redacted. The wrapper returns the
+original `Response` and rethrows the original error. Recording is disabled
+in production by default. Only calls routed through `debugServerFetch` are captured;
+server-side axios calls need their own integration. The in-memory bridge is
+per Node process, so a multi-process or serverless deployment needs a shared
+store instead.
+
 ---
 
 ## Options
@@ -215,6 +330,7 @@ Available on both the React `<ApiDebugger />` component and `initApiDebugger()`:
 | `axiosInstance` | `AxiosInstance` | — | Also intercept this axios instance. |
 | `keyboardShortcut` | `boolean` | `true` | Enable `Ctrl/Cmd+Shift+D` (toggle open) and `Space+H` (toggle fully hidden). |
 | `ignoreUrls` | `(string \| RegExp)[]` | — | Skip matching URLs (e.g. analytics beacons). |
+| `serverLogsUrl` | `string` | — | Same-origin Next.js route for this visitor's Node-side request logs. See "Next.js Node server requests" below. |
 | `captureXhr`* | `boolean` | `true` | Also capture raw `XMLHttpRequest` calls. |
 | `captureConsole`* | `boolean` | `true` | Also capture console output and uncaught errors. |
 | `maxConsoleEntries`* | `number` | `500` | Max console entries kept in memory. |
@@ -248,13 +364,9 @@ guessing:
 0. **Build-time injected attribute** (exact file + line + column, opt-in) —
    see "Getting accurate source locations" below. This is the only
    mechanism unaffected by the two React-specific problems in #1.
-1. **React fiber debug source** (exact file + line) — if the JSX dev
-   transform ran. **In practice this is unreliable on current Next.js**:
-   Next.js's SWC compiler does not consistently attach React's
-   `_debugSource` in dev, even when explicitly configured to — a currently
-   open Next.js bug, not something fixable from outside Next.js. Even where
-   it IS attached, it only covers elements React's own reconciler created
-   directly.
+1. **React fiber debug source** (exact file + line) — available in some
+   React 18 development builds. React 19 removed `_debugSource`, so this
+   cannot provide a dependable path in current Next.js apps.
 2. **Vue component `__file`** (exact file, rarely a line — a `.vue` file
    maps to one whole component, not a per-element position) — attached by
    `vue-loader` / `@vitejs/plugin-vue` in dev mode; generally reliable,
@@ -267,9 +379,9 @@ guessing:
    correctly finds nothing rather than pointing at a vendor bundle chunk
    as if it meant something. It's genuinely useful for plain DOM
    manipulation that doesn't go through a framework at all.
-4. **The current page's own URL** (guaranteed file, best-effort line) — the
-   last resort. The file is always known with certainty; the line number
-   is a best-effort text search against the page's own original HTML.
+4. **Rendered HTML page** (best-effort page URL and HTML line) — used only
+   when the element is not identified as a React element. A page route is
+   not presented as a JSX source file or opened in the editor.
 
 **Angular** gets component name (best-effort, via the Angular DevTools
 global hook when present) but not a source file — no equivalent free
@@ -284,10 +396,10 @@ it rather than showing something misleading.
 
 ### Getting accurate source locations (recommended for React/Next.js)
 
-Because of the two React-specific problems above — Next.js's SWC compiler
-not reliably attaching debug info, and React's render/commit phase split
-meaning a stack trace can never reach back into your component's own call
-frames — **the only mechanism that reliably gives exact file+line for React
+Because React debug source metadata is not dependable in current Next.js,
+and React's render/commit phase split means a DOM-creation stack trace
+cannot reach back into your component's own call
+frames — **the reliable way to get exact file+line for React
 apps is the optional Babel plugin**. It injects a `data-apd-source`
 attribute directly onto native JSX elements at build time, so the Inspector
 reads it straight off the DOM with no dependency on React's runtime at all.
@@ -295,23 +407,72 @@ reads it straight off the DOM with no dependency on React's runtime at all.
 ```js
 // babel.config.js (or .babelrc)
 module.exports = {
-  presets: [/* your existing presets, e.g. 'next/babel' */],
+  presets: ['next/babel'], // keep any other presets your app already uses
   plugins: [
-    process.env.NODE_ENV !== 'production' && 'next-api-debugger/babel-plugin',
+    (process.env.NODE_ENV !== 'production' ||
+      process.env.NEXT_PUBLIC_API_DEBUGGER_ENABLED === 'true') &&
+      'next-api-debugger/babel-plugin',
   ].filter(Boolean),
 };
 ```
 
-**Trade-off worth knowing, specific to Next.js:** adding *any* Babel config
-file switches Next.js off its SWC compiler for the whole app in dev — a
-Next.js behavior, not something this plugin does. You trade some dev-mode
-compile/Fast-Refresh speed for exact, guaranteed-accurate source locations.
-That's why this is opt-in rather than bundled into the default setup — only
-add it if the Inspector's accuracy matters more to you than SWC's speed.
-Skipped entirely for custom components (`<MyComponent>` — only native tags
+Set `editorProjectRoot` to the absolute path of the **Next.js source checkout
+on the developer's computer** to make the displayed path clickable in VS Code:
+
+```tsx
+<ApiDebugger editorProjectRoot="/Users/you/projects/my-next-app" />
+```
+
+If Next.js runs on a remote Node server, use the path on the developer's
+computer, not the server's deployment path. Rebuild the Next.js app after
+enabling the plugin; already-built HTML cannot gain source attributes later.
+For a production build, set `NEXT_PUBLIC_API_DEBUGGER_ENABLED=true` at build
+time only when you intentionally want the debugger and these source paths
+available there.
+
+The Babel config is opt-in because it changes the app's compile path. With
+webpack, Next.js uses Babel instead of SWC for app JavaScript when a Babel
+config is present; Next.js 16 Turbopack supports Babel configs automatically.
+The plugin skips custom components (`<MyComponent>` — only native tags
 like `<div>` get tagged, since a component's props aren't guaranteed to
-reach the actual DOM node) and for production builds if you gate it as
-shown above.
+reach the actual DOM node). The configuration above skips production unless
+the debugger is explicitly enabled there.
+
+### Element Tree and API-vs-static detection
+
+Selecting an element also builds a tree of everything underneath it —
+tag/component, classes, attributes, and source location per node, exactly
+like the top-level element gets, but for the whole subtree at once. Each
+node also gets a data-source badge:
+
+- **API** — this element's own text (or a `src`/`href`/`alt`/`value`/
+  `placeholder` attribute) exactly matches a value found somewhere inside a
+  response body already captured in the **Network tab this session**. The
+  badge is hoverable to show which request it matched.
+- **STATIC** — no match found in any captured response.
+- *(no badge)* — the element has no text or content-bearing attribute of
+  its own to check (a pure layout `<div>`, for instance) — there's nothing
+  to have classified either way.
+
+**Read "STATIC" as "not verified as API-driven this session," not as a
+certainty of hardcoding.** The check can only compare against requests this
+session's `fetch`/`XHR`/`axios` interceptors actually saw. Content fetched
+server-side before the page reached the browser — Next.js
+`getServerSideProps`, `getStaticProps`, React Server Components — is
+invisible to a client-side tool by nature; it would show as STATIC even
+though it's genuinely API-driven, just not through a request this page's
+own JavaScript made. Same for GraphQL clients, WebSocket-delivered data, or
+anything else that doesn't go through `fetch`/XHR/axios.
+
+For performance, source resolution inside the tree uses only the
+synchronous mechanisms (build-plugin attribute, React fiber, Vue `__file`,
+stack trace) — not the plain-HTML network fallback the single selected
+element gets — so building a tree for a subtree with many descendants never
+fires off more than the one request the top-level element might need.
+Depth is capped at 8 levels and 40 children per node as a safety valve
+(clearly marked with a "+N more" note if hit) — not expected to matter for
+a typical card or section, but keeps something huge like accidentally
+selecting `<body>` from freezing the tab.
 
 ## Advanced / manual usage
 
@@ -346,6 +507,8 @@ src/
 │   │   ├── highlight.ts             the hover highlight overlay box
 │   │   ├── elementInfo.ts           box model, computed styles, hierarchy, attributes
 │   │   ├── resolvers.ts             priority-ordered source/component-name resolution (see README section above)
+│   │   ├── tree.ts                  descendant tree builder (Element Tree section, see README above)
+│   │   ├── dataSource.ts             API-vs-static detection, cross-referenced against captured Network responses
 │   │   └── creationTracker.ts       deferred, cheap-to-install element-creation stack capture
 │   └── interceptors/
 │       ├── fetchInterceptor.ts     reversible window.fetch patch, clones responses

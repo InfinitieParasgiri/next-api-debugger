@@ -28,6 +28,11 @@
       "import": "./dist/standalone.mjs",
       "require": "./dist/standalone.js"
     },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs",
+      "require": "./dist/server.js"
+    },
     "./babel-plugin": "./babel-plugin.js"
   },
   "scripts": {
@@ -77,4 +82,3 @@
     "framework-agnostic"
   ]
 }
-

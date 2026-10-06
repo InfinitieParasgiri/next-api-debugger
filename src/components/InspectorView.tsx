@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ElementInfo } from '../types';
+import { ElementInfo, ElementTreeNode } from '../types';
 import { buildElementInfo } from '../core/inspector/elementInfo';
+import { buildElementTree } from '../core/inspector/tree';
+import { logStore } from '../core/logStore';
 import { startPicking, PickController } from '../core/inspector/pick';
 import { createHighlightBox, HighlightBox } from '../core/inspector/highlight';
 import { copyToClipboard } from '../core/utils';
+import { editorLink } from '../core/inspector/editorLink';
+import { ElementTreeView } from './ElementTreeView';
 
 interface InspectorViewProps {
   /** Called whenever picking starts/stops, so the parent can minimize the modal out of the way while picking (otherwise the modal's own backdrop would block clicking elements on the page). */
@@ -60,18 +64,15 @@ function SourceCard({ info, editorProjectRoot }: { info: ElementInfo; editorProj
   if (!source) {
     return (
       <div className="apd-source-card">
-        <div className="apd-source-none">Source location unavailable for this element.</div>
+        {componentName && <div>Component: <strong>{componentName}</strong></div>}
+        <div className="apd-source-none">Source file unavailable. For React/Next.js, enable the Babel source plugin for exact JSX paths.</div>
       </div>
     );
   }
 
-  const label = source.line ? `${source.file}:${source.line}${source.column ? `:${source.column}` : ''}` : source.file;
-  const canOpen = !!editorProjectRoot;
-  const href = canOpen
-    ? `vscode://file/${editorProjectRoot!.replace(/\/$/, '')}/${source.file.replace(/^\//, '')}${
-        source.line ? `:${source.line}:${source.column ?? 1}` : ''
-      }`
-    : undefined;
+  const location = source.line ? `${source.file}:${source.line}${source.column ? `:${source.column}` : ''}` : source.file;
+  const label = source.origin === 'plain-html' ? `Rendered page: ${location}` : location;
+  const href = editorLink(source, editorProjectRoot);
 
   return (
     <div className="apd-source-card">
@@ -80,7 +81,7 @@ function SourceCard({ info, editorProjectRoot }: { info: ElementInfo; editorProj
           Component: <strong style={{ color: 'var(--apd-text)' }}>{componentName}</strong>
         </div>
       )}
-      {canOpen ? (
+      {href ? (
         <a className="apd-source-path" href={href} title="Open in VS Code">
           {label}
         </a>
@@ -90,7 +91,7 @@ function SourceCard({ info, editorProjectRoot }: { info: ElementInfo; editorProj
       <div className="apd-source-meta">
         <span className={`apd-confidence-badge apd-confidence-${source.confidence}`}>{source.confidence}</span>
         <span>via {source.origin}</span>
-        {!canOpen && (
+        {!href && source.origin !== 'plain-html' && (
           <button
             type="button"
             className="apd-console-toggle-stack"
@@ -109,6 +110,7 @@ export function InspectorView({ onInspectingChange, editorProjectRoot }: Inspect
   const [inspecting, setInspecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<ElementInfo | null>(null);
+  const [tree, setTree] = useState<ElementTreeNode | null>(null);
   const controllerRef = useRef<PickController | null>(null);
   const highlightRef = useRef<HighlightBox | null>(null);
 
@@ -141,6 +143,7 @@ export function InspectorView({ onInspectingChange, editorProjectRoot }: Inspect
         setLoading(true);
         const built = await buildElementInfo(el);
         setInfo(built);
+        setTree(buildElementTree(el, logStore.getLogs()));
         setLoading(false);
       },
       (el) => {
@@ -255,6 +258,21 @@ export function InspectorView({ onInspectingChange, editorProjectRoot }: Inspect
           <KeyValueRows data={info.computedStyles} />
         </div>
       </div>
+
+      {tree && (
+        <div className="apd-section">
+          <div className="apd-section-header">
+            Element Tree
+            <span style={{ fontWeight: 400, color: 'var(--apd-text-faint)', fontSize: 10.5 }}>
+              {' '}
+              — structure, source, and data origin for this element and its descendants
+            </span>
+          </div>
+          <div className="apd-section-body">
+            <ElementTreeView root={tree} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

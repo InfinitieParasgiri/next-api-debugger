@@ -1,7 +1,7 @@
 import * as react from 'react';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | string;
-type RequestSource = 'fetch' | 'axios' | 'xhr';
+type RequestSource = 'fetch' | 'axios' | 'xhr' | 'server-fetch';
 interface ApiLogEntry {
     id: string;
     url: string;
@@ -43,6 +43,8 @@ interface ApiDebuggerProps {
     keyboardShortcut?: boolean;
     /** URL patterns to exclude from capture. */
     ignoreUrls?: (string | RegExp)[];
+    /** Same-origin Next.js route returning this visitor's server request logs. */
+    serverLogsUrl?: string;
     /** Enable the Inspector tab (element picker + source mapping). Defaults to true. */
     inspector?: boolean;
     /**

@@ -8,7 +8,7 @@ export type HttpMethod =
   | 'OPTIONS'
   | string;
 
-export type RequestSource = 'fetch' | 'axios' | 'xhr';
+export type RequestSource = 'fetch' | 'axios' | 'xhr' | 'server-fetch';
 
 export interface ApiLogEntry {
   id: string;
@@ -49,6 +49,8 @@ export interface ApiDebuggerProps {
   keyboardShortcut?: boolean;
   /** URL patterns to exclude from capture. */
   ignoreUrls?: (string | RegExp)[];
+  /** Same-origin Next.js route returning this visitor's server request logs. */
+  serverLogsUrl?: string;
   /** Enable the Inspector tab (element picker + source mapping). Defaults to true. */
   inspector?: boolean;
   /**
@@ -104,6 +106,13 @@ export interface SourceLocation {
   origin: SourceOrigin;
 }
 
+export interface DataSourceInfo {
+  kind: 'api' | 'static' | 'unknown';
+  endpoint?: string;
+  method?: string;
+  matchedValue?: string;
+}
+
 export interface ElementAncestor {
   tag: string;
   id: string | null;
@@ -137,4 +146,24 @@ export interface ElementInfo {
   textPreview: string | null;
   componentName: string | null;
   source: SourceLocation | null;
+}
+
+// --- Element tree (descendants) --------------------------------------------
+
+export interface ElementTreeNode {
+  tag: string;
+  id: string | null;
+  classes: string[];
+  attributes: Record<string, string>;
+  componentName: string | null;
+  source: SourceLocation | null;
+  dataSource: DataSourceInfo;
+  textPreview: string | null;
+  children: ElementTreeNode[];
+  /** True only for the exact element the user picked — everything else in the tree is an ancestor (above it) or descendant (below it). */
+  isSelected?: boolean;
+  /** True for every node on the path leading down to the selected element (i.e. every ancestor), so the UI can keep that whole chain expanded by default regardless of depth — only the selected element's own descendants use depth-based auto-collapse. */
+  isAncestorPath?: boolean;
+  /** Set when this node had more direct children than the safety cap allows — the count of ones NOT included, so the UI can say "+N more" rather than silently dropping them. */
+  truncatedChildCount?: number;
 }
