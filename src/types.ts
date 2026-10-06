@@ -47,6 +47,8 @@ export interface ApiDebuggerProps {
   theme?: 'light' | 'dark' | 'system';
   /** Enable Ctrl/Cmd+Shift+D to toggle the modal. Defaults to true. */
   keyboardShortcut?: boolean;
+  /** Optional Ctrl/Cmd + digit sequence that defers capture and UI until typed, e.g. "305305". */
+  activationSequence?: string;
   /** URL patterns to exclude from capture. */
   ignoreUrls?: (string | RegExp)[];
   /** Same-origin Next.js route returning this visitor's server request logs. */

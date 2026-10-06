@@ -11,6 +11,7 @@ import { subscribeServerLogs } from '../core/serverLogClient';
 import { useApiLogs } from '../hooks/useApiLogs';
 import { useConsoleLogs } from '../hooks/useConsoleLogs';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
+import { useActivationSequence } from '../hooks/useActivationSequence';
 import { useHoldCombo } from '../hooks/useHoldCombo';
 import { StyleInjector } from './StyleInjector';
 import { FloatingButton } from './FloatingButton';
@@ -37,6 +38,7 @@ export function ApiDebugger(props: ApiDebuggerProps) {
     axiosInstance,
     theme: themeProp = 'dark',
     keyboardShortcut = true,
+    activationSequence,
     ignoreUrls,
     serverLogsUrl,
     inspector = true,
@@ -44,14 +46,18 @@ export function ApiDebugger(props: ApiDebuggerProps) {
   } = props;
 
   const isEnabled = resolveEnabled(enabled);
+  const [activated, setActivated] = useState(!activationSequence);
+  const captureEnabled = isEnabled && activated;
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(themeProp);
   const { logs, clear, togglePin } = useApiLogs();
   const { entries: consoleEntries, clear: clearConsole } = useConsoleLogs();
 
+  useEffect(() => setActivated(!activationSequence), [activationSequence]);
+
   useEffect(() => {
-    if (!isEnabled || typeof window === 'undefined') return;
+    if (!captureEnabled || typeof window === 'undefined') return;
     logStore.setMaxLogs(maxLogs);
     consoleStore.setMaxEntries(500);
     installFetchInterceptor({ ignoreUrls: serverLogsUrl ? [...(ignoreUrls ?? []), serverLogsUrl] : ignoreUrls });
@@ -67,14 +73,19 @@ export function ApiDebugger(props: ApiDebuggerProps) {
       uninstallAxios();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEnabled, inspector, serverLogsUrl]);
+  }, [captureEnabled, inspector, serverLogsUrl]);
 
   useEffect(() => {
-    if (!isEnabled || !serverLogsUrl || typeof window === 'undefined') return;
+    if (!captureEnabled || !serverLogsUrl || typeof window === 'undefined') return;
     return subscribeServerLogs(serverLogsUrl);
-  }, [isEnabled, serverLogsUrl]);
+  }, [captureEnabled, serverLogsUrl]);
 
-  useKeyboardShortcut({ ctrl: true, shift: true, key: 'd' }, () => setOpen((o) => !o), isEnabled && keyboardShortcut);
+  useActivationSequence(activationSequence, () => {
+    setActivated(true);
+    setOpen((current) => !current);
+  }, isEnabled && keyboardShortcut);
+
+  useKeyboardShortcut({ ctrl: true, shift: true, key: 'd' }, () => setOpen((o) => !o), captureEnabled && keyboardShortcut);
 
   // Hold Space+H together to fully hide (or reveal) the debugger — button
   // and modal both — without touching the mount toggle from the shortcut
@@ -86,10 +97,10 @@ export function ApiDebugger(props: ApiDebuggerProps) {
       setHidden((h) => !h);
       setOpen(false);
     },
-    isEnabled && keyboardShortcut
+    captureEnabled && keyboardShortcut
   );
 
-  if (!isEnabled) return null;
+  if (!captureEnabled) return null;
 
   const networkErrors = logs.filter((l) => !l.success).length;
   const consoleErrors = consoleEntries.filter((e) => e.level === 'error').length;

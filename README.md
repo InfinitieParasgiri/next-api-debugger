@@ -334,6 +334,7 @@ Available on both the React `<ApiDebugger />` component and `initApiDebugger()`:
 | `initialPosition` | `{ x, y }` | bottom-right | Starting position of the floating button. |
 | `axiosInstance` | `AxiosInstance` | — | Also intercept this axios instance. |
 | `keyboardShortcut` | `boolean` | `true` | Enable `Ctrl/Cmd+Shift+D` (toggle open) and `Space+H` (toggle fully hidden). |
+| `activationSequence`† | `string` | — | Optional digit sequence typed while holding Ctrl/Cmd, such as `"305305"`. Defers the React panel and browser capture until the sequence is entered. |
 | `ignoreUrls` | `(string \| RegExp)[]` | — | Skip matching URLs (e.g. analytics beacons). |
 | `serverLogsUrl` | `string` | — | Same-origin Next.js route for this visitor's Node-side request logs. See "Next.js Node server requests" below. |
 | `captureXhr`* | `boolean` | `true` | Also capture raw `XMLHttpRequest` calls. |
@@ -350,6 +351,12 @@ Available on both the React `<ApiDebugger />` component and `initApiDebugger()`:
 
 **React:** the component renders `null` and never patches anything when
 `NODE_ENV === 'production'`, by default.
+For an authorized production session, mount `<ApiDebugger enabled
+activationSequence="305305" />` behind your application's access check.
+Hold Ctrl (or Cmd on macOS) and type `3 0 5 3 0 5` to open it. Capture starts
+only after activation. The sequence is present in browser code and is not an
+access control mechanism. Server-side capture still requires a separate,
+authorized Node route and `debugServerFetch(..., { enabled: true })`.
 
 **Standalone / global script:** there's no build step to infer environment
 from, so gate it yourself — e.g. only include the `<script>` tag behind a
